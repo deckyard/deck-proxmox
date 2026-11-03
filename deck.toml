@@ -1,0 +1,19 @@
+[package]
+name = "@deckyard/proxmox"
+version = "0.1.0"
+description = "A client for the Proxmox VE API: guests, nodes, storage and tasks"
+license = "LGPL-3.0-only"
+authors = ["mplx <mplx@jennifer-lang.dev>"]
+# The deck talks to a Proxmox VE host over HTTPS, so it opens sockets. No
+# `exec`: it shells out to nothing. No `sql`.
+capabilities = ["net"]
+keywords = ["proxmox", "pve", "virtualization", "kvm", "lxc", "homelab", "api"]
+
+[package.urls]
+deck = "https://raw.githubusercontent.com/deckyard/deck-proxmox/main/deck.toml"
+homepage = "https://github.com/deckyard/deck-proxmox"
+manual = "https://deckyard.github.io/deck-proxmox/"
+
+# Only the default binary: `jennifer-tiny` has no `net` capability.
+[engines]
+jennifer = ">=0.25.0"

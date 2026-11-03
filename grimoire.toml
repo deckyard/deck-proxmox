@@ -1,0 +1,34 @@
+# Grimoire book configuration for the @deckyard/proxmox documentation.
+
+[book]
+title = "@deckyard/proxmox"
+description = "A client for the Proxmox VE API: guests, nodes, storage and tasks"
+language = "en"
+src = "docs"
+
+[build]
+out = "site"
+clean = true
+jobs = 0
+
+[html]
+theme = "meridian"
+mode = "auto"
+navPosition = "left"
+tocPosition = "right"
+tocDepth = 3
+sectionNumbers = true
+titleUrl = "https://deckyard.github.io/deck-proxmox/"
+repoUrl = "https://github.com/deckyard/deck-proxmox"
+repoLabel = "Source"
+editUrl = "https://github.com/deckyard/deck-proxmox/edit/main/docs/{path}"
+
+[highlight]
+enabled = true
+
+[search]
+enabled = true
+
+[pdf]
+# The book is published as a site only.
+enabled = false

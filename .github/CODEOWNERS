@@ -1,0 +1,6 @@
+# Who maintains this deck. GitHub requests their review on every pull request.
+#
+# For now one team maintains every Deckyard deck; manage its members in the
+# organisation's settings, not here. A deck that gains maintainers of its own
+# gets its own team in this file. See CONTRIBUTING.md in deckyard/.github.
+*  @deckyard/maintainers
