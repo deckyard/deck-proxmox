@@ -11,17 +11,23 @@
 # of this script with `jvc install`. A deck with no dependencies - most of them
 # - has nothing to do here, so the workflows call this unconditionally.
 #
-# What it does: for every `[decks]` entry that also has a `[sources]` git URL,
-# clone at the highest tag satisfying the constraint and copy its `src/` into
-# vendor/<scope>/<deck>/, which is the layout the interpreter's @scope/package
-# resolver reads. Test overlays are not vendored - a consumer's tree carries
-# library code only, exactly as jvc would install it.
+# What it does: for every `[decks]` entry, find the version to use, clone its
+# repository at that tag and copy its `src/` into vendor/<scope>/<deck>/, which
+# is the layout the interpreter's @scope/package resolver reads. Test overlays
+# are not vendored - a consumer's tree carries library code only, exactly as
+# jvc would install it.
+#
+# Where the version comes from:
+#   - an entry with a `[sources]` git URL: the highest tag there satisfying
+#     the constraint, as jvc reads a git source;
+#   - any other: the registry's `/v1/resolve`, which applies the constraint
+#     and pins a commit; the clone must match that commit. The registry is
+#     $JVC_REGISTRY, else https://registry.jennifer-lang.dev, as for jvc.
 #
 # Limitations, stated rather than hidden:
-#   - Only `>=X.Y.Z`, `X.Y.Z` and `*` constraints are understood. Caret and
-#     tilde ranges are jvc's job, not a shell script's.
-#   - A dependency with no `[sources]` entry is an error here. Registry
-#     resolution is not something this should attempt to imitate.
+#   - For a `[sources]` entry only `>=X.Y.Z`, `X.Y.Z` and `*` constraints are
+#     understood; the registry understands every range jvc does.
+#   - Only direct dependencies are vendored, not theirs.
 #
 # Usage: tools/vendor-deps.sh
 set -euo pipefail
@@ -104,21 +110,73 @@ pick_tag() {
     printf '%s\n' "$best"
 }
 
+REGISTRY="${JVC_REGISTRY:-https://registry.jennifer-lang.dev}"
+REGISTRY="${REGISTRY%/}"
+
+# Ask the registry for the version a constraint selects. Prints
+# "version<TAB>ref<TAB>url<TAB>commit", or stops with the registry's reason.
+registry_pin() {
+    local name="$1" constraint="$2" reply
+    reply="$(curl -sS --max-time 30 -G "$REGISTRY/v1/resolve" \
+        --data-urlencode "name=$name" --data-urlencode "constraint=$constraint" \
+        -w '\n%{http_code}')" || deck_die "could not reach the registry at $REGISTRY"
+    RESOLVE_REPLY="$reply" python3 - "$name" "$constraint" "$REGISTRY" <<'PY'
+import json, os, sys
+
+name, constraint, registry = sys.argv[1:4]
+lines = os.environ["RESOLVE_REPLY"].rstrip("\n").split("\n")
+status, body = lines[-1], "\n".join(lines[:-1])
+try:
+    doc = json.loads(body)
+except ValueError:
+    doc = {}
+if status != "200" or not doc.get("found"):
+    why = doc.get("error") or "HTTP " + status
+    sys.exit(f"error: {registry} cannot resolve {name} {constraint}: {why}")
+if doc.get("kind") != "git":
+    sys.exit(f"error: {name} {doc.get('version')} is a {doc.get('kind')!r} release; only git is supported")
+pin = [doc.get(k) or "" for k in ("version", "ref", "url", "commit")]
+if not all(pin):
+    sys.exit(f"error: {registry} gave an incomplete pin for {name}: {body}")
+print("\t".join(pin))
+PY
+}
+
 count=0
 while IFS=$'\t' read -r name constraint url; do
     [[ -n "$name" ]] || continue
-    [[ -n "$url" ]] || deck_die "$name has no [sources] entry - this script cannot resolve from a registry"
 
     scope="${name#@}"; scope="${scope%%/*}"
     slug="${name##*/}"
-    tag="$(pick_tag "$url" "$constraint")"
+    commit=""
+    if [[ -n "$url" ]]; then
+        tag="$(pick_tag "$url" "$constraint")"
+        refs=("$tag" "v$tag")
+        echo "--- ${name} ${constraint} -> ${tag} (${url})"
+    else
+        pin="$(registry_pin "$name" "$constraint")" || exit 1
+        IFS=$'\t' read -r tag ref url commit <<<"$pin"
+        refs=("$ref")
+        echo "--- ${name} ${constraint} -> ${tag} (${url} at ${ref}, from the registry)"
+    fi
 
-    echo "--- ${name} ${constraint} -> ${tag} (${url})"
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
-    git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$tag" "$url" "$tmp/src" \
-        || git -c advice.detachedHead=false clone --quiet --depth 1 --branch "v$tag" "$url" "$tmp/src" \
-        || deck_die "could not clone $url at $tag"
+    cloned=no
+    for r in "${refs[@]}"; do
+        if git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$r" "$url" "$tmp/src" 2>/dev/null; then
+            cloned=yes
+            break
+        fi
+    done
+    [[ "$cloned" == yes ]] || deck_die "could not clone $url at ${refs[*]}"
+    # The registry pins the commit the tag named when it was published; a tag
+    # moved since then is someone else's code under that version.
+    if [[ -n "$commit" ]]; then
+        got="$(git -C "$tmp/src" rev-parse HEAD)"
+        [[ "$got" == "$commit" ]] \
+            || deck_die "$name $tag: $url has $ref at $got, but the registry pinned $commit"
+    fi
 
     [[ -d "$tmp/src/src" ]] || deck_die "$name at $tag has no src/ directory"
     dest="vendor/${scope}/${slug}"
