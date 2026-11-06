@@ -799,7 +799,9 @@ func testInterfacesAndAddresses() {
             '{"ip-address":"fe80::be24:11ff:fe00:1","ip-address-type":"ipv6","prefix":64}]}]}'),
         ok('[{"name":"lo","hwaddr":"00:00:00:00:00:00","inet":"127.0.0.1/8","inet6":"::1/128"},' +
             '{"name":"eth0","hwaddr":"bc:24:11:00:00:02","inet":"10.0.0.6/24",' +
-            '"inet6":"2001:db8::6/64"}]'),
+            '"inet6":"2001:db8::6/64"},' +
+            '{"name":"eth1","hwaddr":"bc:24:11:00:00:03","inet":"169.254.3.4/16",' +
+            '"inet6":"FE90::3/64"}]'),
         ok('{"result":[]}')
     ]);
     def c as Client init tokenClient($f);
