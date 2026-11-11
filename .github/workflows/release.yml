@@ -64,9 +64,13 @@ jobs:
     needs: tag
     uses: ./.github/workflows/test.yml
 
+  # Publishing targets GitHub (releases, Pages). The repositories are also on
+  # the project's Forgejo, whose runner executes these workflows too: there the
+  # tag is still checked and the gate still runs, but nothing is published.
   release:
     name: Create the release
     needs: test
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -149,6 +153,7 @@ jobs:
   docs:
     name: Publish the documentation
     needs: release
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     permissions:
       actions: write
