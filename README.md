@@ -14,6 +14,15 @@ templates, metrics, pools, HA, firewall rules, permissions and background
 tasks. It authenticates with an API token
 or a password ticket (TOTP included) and trusts the cluster's own CA.
 
+**Infrastructure as Code (IaC).** Guests, cloud-init, pools, HA, firewall
+rules and permissions can be provisioned from a Jennifer program kept in
+version control and reviewed like any other code. The create verbs are not
+idempotent: `createVm`, `createContainer` and `createPool` fail when the id
+exists, and `addFirewallRule` adds a rule on every run. A re-runnable script
+lists what exists first (`guests`, `pools`, `firewallRules`); `setConfig`,
+`setCloudInit` and `grant` can be applied again. There is no plan or diff
+step, and the deck does not detect drift.
+
 **[Documentation](https://deckyard.github.io/deck-proxmox/)**
 
 ## Install
@@ -46,7 +55,7 @@ io.printf("start: %s\n", $t.exitStatus);
 
 ## Requirements
 
-Jennifer 0.25.0 or newer and the default `jennifer` binary: the deck needs
+Jennifer 0.26.0 or newer and the default `jennifer` binary: the deck needs
 the `net` capability, which `jennifer-tiny` lacks.
 
 ## Development

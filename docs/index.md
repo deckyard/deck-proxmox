@@ -12,6 +12,15 @@ disk resizing, cloud-init, backups and restores, ISOs and container
 templates, metrics, pools, HA, firewall rules, permissions and background
 tasks.
 
+**Infrastructure as Code (IaC).** Guests, cloud-init, pools, HA, firewall
+rules and permissions can be provisioned from a Jennifer program kept in
+version control and reviewed like any other code. The create verbs are not
+idempotent: `createVm`, `createContainer` and `createPool` fail when the id
+exists, and `addFirewallRule` adds a rule on every run. A re-runnable script
+lists what exists first (`guests`, `pools`, `firewallRules`); `setConfig`,
+`setCloudInit` and `grant` can be applied again. There is no plan or diff
+step, and the deck does not detect drift.
+
 ## Conventions
 
 Snippets assume this import:
@@ -55,6 +64,6 @@ Writes are never retried. `withRetries` retries only GETs answered 429 or 5xx.
 
 ## Requirements
 
-Jennifer 0.25.0 or newer, default `jennifer` binary: the deck needs the `net`
+Jennifer 0.26.0 or newer, default `jennifer` binary: the deck needs the `net`
 capability, which `jennifer-tiny` lacks. Tested against the API of Proxmox VE
 7 and 8.
