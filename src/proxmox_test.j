@@ -1154,6 +1154,8 @@ func testWaitTaskRetriesOutagesButNotRefusals() {
         missed("a 401 was retried");
     } catch (e) {
         testing.assertTrue(strings.contains($e.message, "HTTP 401"));
+        testing.assertEqual($e.kind, ERROR_KIND);
+        testing.assertEqual($e.status, 401);
     }
     finish($f);
     testing.assertEqual($t.exitStatus, "OK");
@@ -1170,6 +1172,7 @@ func testWaitTaskGivesUpAfterTooManyFailures() {
         missed("waitTask retried for ever");
     } catch (e) {
         testing.assertTrue(strings.contains($e.message, "HTTP 500: no such task"));
+        testing.assertEqual($e.status, 500);
     }
     def seen as list of Seen init finish($f);
     testing.assertEqual(len($seen), MAX_POLL_FAILURES);
@@ -1183,4 +1186,34 @@ func testDescribeHidesTheSecret() {
         describe($ticket),
         "https://pve:8006 (ticket for ada@pve, certificate not checked)");
     testing.assertEqual(describe(client("pve")), "https://pve:8006 (no credential)");
+}
+
+# A local check has status 0; a cap reached in transport stays kind "limit",
+# with the request in front of the cause.
+func testLocalFailuresAndCaps() {
+    try {
+        fail("a bad value");
+        missed("fail did not throw");
+    } catch (e) {
+        testing.assertEqual($e.kind, ERROR_KIND);
+        testing.assertEqual($e.status, 0);
+    }
+    try {
+        failTransport(
+            "GET /version",
+            Error{kind: "limit", message: "http: response body exceeds 10 bytes"});
+        missed("failTransport did not throw");
+    } catch (e) {
+        testing.assertEqual($e.kind, "limit");
+        testing.assertEqual(
+            $e.message,
+            "proxmox: GET /version: http: response body exceeds 10 bytes");
+    }
+    try {
+        failTransport("GET /version", Error{kind: "http", message: "connection refused"});
+        missed("failTransport did not throw");
+    } catch (e) {
+        testing.assertEqual($e.kind, ERROR_KIND);
+        testing.assertEqual($e.status, 0);
+    }
 }

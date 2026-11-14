@@ -10,8 +10,9 @@ Every export of `@deckyard/proxmox`. Guides are listed in
 import "@deckyard/proxmox/" as proxmox;
 ```
 
-Every function that sends a request throws `Error{kind: "proxmox"}` when it
-fails. A `guest` argument is a `Guest` from `proxmox.guests` or
+Every function that sends a request throws a `ProxmoxError` (kind `"proxmox"`,
+with the HTTP `status`) when it fails; a reply over its size cap is kind
+`"limit"`. A `guest` argument is a `Guest` from `proxmox.guests` or
 `proxmox.guest`; an `upid` is the string an action returned.
 
 ## Constants
@@ -24,6 +25,16 @@ fails. A `guest` argument is a `Guest` from `proxmox.guests` or
 | `TICKET_LIFETIME` | `7200` | seconds a ticket is valid |
 
 ## Types
+
+### `ProxmoxError`
+
+Every error of kind `"proxmox"`.
+
+| Field | Meaning |
+|---|---|
+| `kind as string` | always `"proxmox"` |
+| `message as string` | `proxmox: <verb> <path>: HTTP <status>: <reason>`, or what went wrong |
+| `status as int` | the HTTP status the API answered; 0 when none was read or for a local check |
 
 ### `Client`
 

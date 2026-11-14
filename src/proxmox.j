@@ -14,7 +14,8 @@
  * A `Client` authenticates with an API token (`withToken`) or with a ticket
  * from `login`. Proxmox hosts usually present a self-signed certificate:
  * trust it with `withCaCert`, or turn checking off with `withInsecure`.
- * Every failure is `Error{kind: "proxmox"}`.
+ * Every failure is a `ProxmoxError` (kind `"proxmox"`) carrying the HTTP
+ * `status` the API answered; a reply over its size cap is kind `"limit"`.
  *
  * @module proxmox
  * @see https://pve.proxmox.com/pve-docs/api-viewer/
@@ -371,13 +372,42 @@ export def struct Acl {
 };
 
 /**
+ * A failed request or a refused value. Every error of kind `"proxmox"` is one,
+ * so its fields are safe to read once the kind matches.
+ *
+ * @field kind {string} always `"proxmox"` (`ERROR_KIND`)
+ * @field message {string} `proxmox: ` and what failed, for a refused request `<verb> <path>: HTTP <status>: <reason>`
+ * @field status {int} the HTTP status the API answered (401, 403, 500, 595, ...); 0 when no answer was read or the failure is a local check
+ */
+export def struct ProxmoxError {
+    kind as string,
+    message as string,
+    status as int
+};
+
+/**
  * Raise a deck error.
  *
  * @param message {string} what went wrong
- * @throws {Error} always, with `kind` `"proxmox"`
+ * @throws {ProxmoxError} always, with `kind` `"proxmox"`
  */
 func fail(message as string) {
-    throw Error{kind: ERROR_KIND, message: "proxmox: " + $message};
+    failStatus($message, 0);
+}
+
+# failStatus throws the ProxmoxError of a refused request, with its status.
+func failStatus(message as string, status as int) {
+    throw ProxmoxError{kind: ERROR_KIND, message: "proxmox: " + $message, status: $status};
+}
+
+# failTransport throws the error of a request that got no usable answer: a
+# reached cap (an `http` body cap) stays kind "limit", anything else is a
+# ProxmoxError; the message is `proxmox: <verb> <path>: <cause>` either way.
+func failTransport(what as string, e as Error) {
+    if ($e.kind == "limit") {
+        throw Error{kind: "limit", message: "proxmox: " + $what + ": " + $e.message};
+    }
+    fail($what + ": " + $e.message);
 }
 
 /**
@@ -419,7 +449,7 @@ func baseUrl(address as string) {
  *
  * @param address {string} host name, `host:port` or a full `https://` URL
  * @return {Client} the client; full certificate checking, 1 s task polling
- * @throws {Error} kind `"proxmox"` when the address is empty
+ * @throws {ProxmoxError} kind `"proxmox"` when the address is empty
  */
 export func client(address as string) {
     def c as Client;
@@ -436,7 +466,7 @@ export func client(address as string) {
  * @param tokenId {string} `user@realm!name`
  * @param secret {string} the token's secret (a UUID)
  * @return {Client} the changed copy
- * @throws {Error} kind `"proxmox"` when the id is not `user@realm!name`
+ * @throws {ProxmoxError} kind `"proxmox"` when the id is not `user@realm!name`
  */
 export func withToken(c as Client, tokenId as string, secret as string) {
     if (not strings.contains($tokenId, "@") or not strings.contains($tokenId, "!")) {
@@ -456,7 +486,7 @@ export func withToken(c as Client, tokenId as string, secret as string) {
  * @param ticket {string} the `PVEAuthCookie` value
  * @param csrf {string} the matching `CSRFPreventionToken`
  * @return {Client} the changed copy
- * @throws {Error} kind `"proxmox"` when the ticket holds `;`, `,`, spaces or
+ * @throws {ProxmoxError} kind `"proxmox"` when the ticket holds `;`, `,`, spaces or
  *   control characters, which cannot travel in a cookie
  */
 export func withTicket(c as Client, ticket as string, csrf as string) {
@@ -541,7 +571,7 @@ export func withPollInterval(c as Client, ms as int) {
  * @param username {string} `user@realm`, e.g. `root@pam`
  * @param password {string} the password
  * @return {Client} the copy holding the ticket
- * @throws {Error} kind `"proxmox"` when the login is refused, or when the
+ * @throws {ProxmoxError} kind `"proxmox"` when the login is refused, or when the
  *   account needs a second factor (use `loginTotp`)
  */
 export func login(c as Client, username as string, password as string) {
@@ -560,7 +590,7 @@ export func login(c as Client, username as string, password as string) {
  * @param password {string} the password
  * @param code {string} the current six-digit code
  * @return {Client} the copy holding the ticket
- * @throws {Error} kind `"proxmox"` when either step is refused
+ * @throws {ProxmoxError} kind `"proxmox"` when either step is refused
  */
 export func loginTotp(c as Client, username as string, password as string, code as string) {
     def first as json.Value init ticketRequest($c, {"username": $username, "password": $password});
@@ -580,7 +610,7 @@ export func loginTotp(c as Client, username as string, password as string, code 
  *
  * @param c {Client} a client holding a ticket that has not run out
  * @return {Client} the copy holding the new ticket
- * @throws {Error} kind `"proxmox"` when the client has no ticket or it was refused
+ * @throws {ProxmoxError} kind `"proxmox"` when the client has no ticket or it was refused
  */
 export func renew(c as Client) {
     if ($c.ticket == "") {
@@ -639,7 +669,7 @@ func keepTicket(c as Client, data as json.Value) {
  * Refuse a path that could send the credential somewhere else.
  *
  * @param path {string} an API path such as `/nodes`
- * @throws {Error} kind `"proxmox"` unless the path starts with one `/` and has
+ * @throws {ProxmoxError} kind `"proxmox"` unless the path starts with one `/` and has
  *   no `..`, `?`, `#` or `//`
  */
 func ensurePath(path as string) {
@@ -682,7 +712,7 @@ func authHeaders(c as Client, method as string) {
  * @param path {string} the path under `/api2/json`, e.g. `/nodes/pve1/qemu`
  * @param params {map of string to string} the parameters; `{}` for none
  * @return {json.Value} the reply's `data` member; JSON `null` for none
- * @throws {Error} kind `"proxmox"` on a bad path, a network failure or a reply
+ * @throws {ProxmoxError} kind `"proxmox"` on a bad path, a network failure or a reply
  *   that is not 2xx; the message names the status and Proxmox's reason
  */
 export func call(c as Client, method as string, path as string, params as map of string to string) {
@@ -714,10 +744,10 @@ export func call(c as Client, method as string, path as string, params as map of
     try {
         $r = http.send($verb, $url, $headers, $body, $o);
     } catch (e) {
-        fail($verb + " " + $path + ": " + $e.message);
+        failTransport($verb + " " + $path, $e);
     }
     if ($r.status < 200 or $r.status >= 300) {
-        fail($verb + " " + $path + ": " + failureText($r));
+        failStatus($verb + " " + $path + ": " + failureText($r), $r.status);
     }
     return dataOf($r.body, $verb + " " + $path);
 }
@@ -729,7 +759,7 @@ export func call(c as Client, method as string, path as string, params as map of
  * @param path {string} the path under `/api2/json`
  * @param params {map of string to string} query parameters; `{}` for none
  * @return {json.Value} the reply's `data`
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func get(c as Client, path as string, params as map of string to string) {
     return call($c, "GET", $path, $params);
@@ -743,7 +773,7 @@ export func get(c as Client, path as string, params as map of string to string) 
  * @param path {string} the path under `/api2/json`
  * @param params {map of string to string} form fields; `{}` for none
  * @return {json.Value} the reply's `data`
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func post(c as Client, path as string, params as map of string to string) {
     return call($c, "POST", $path, $params);
@@ -756,7 +786,7 @@ export func post(c as Client, path as string, params as map of string to string)
  * @param path {string} the path under `/api2/json`
  * @param params {map of string to string} form fields; `{}` for none
  * @return {json.Value} the reply's `data`
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func put(c as Client, path as string, params as map of string to string) {
     return call($c, "PUT", $path, $params);
@@ -769,7 +799,7 @@ export func put(c as Client, path as string, params as map of string to string) 
  * @param path {string} the path under `/api2/json`
  * @param params {map of string to string} query parameters; `{}` for none
  * @return {json.Value} the reply's `data`
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func delete(c as Client, path as string, params as map of string to string) {
     return call($c, "DELETE", $path, $params);
@@ -1032,7 +1062,7 @@ func storageKey(s as Storage) {
  *
  * @param c {Client} the client
  * @return {Version} the version
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func version(c as Client) {
     def d as json.Value init get($c, "/version", {});
@@ -1048,7 +1078,7 @@ export func version(c as Client) {
  *
  * @param c {Client} the client
  * @return {list of Node} the nodes
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func nodes(c as Client) {
     def d as json.Value init get($c, "/nodes", {});
@@ -1101,7 +1131,7 @@ func guestFrom(d as json.Value, p as string) {
  *
  * @param c {Client} the client
  * @return {list of Guest} the guests
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func guests(c as Client) {
     def d as json.Value init get($c, "/cluster/resources", {"type": "vm"});
@@ -1121,7 +1151,7 @@ export func guests(c as Client) {
  * @param c {Client} the client
  * @param vmid {int} the guest id
  * @return {Guest} the guest
- * @throws {Error} kind `"proxmox"` when there is no such guest, or as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` when there is no such guest, or as `call`
  */
 export func guest(c as Client, vmid as int) {
     for (def g in guests($c)) {
@@ -1137,7 +1167,7 @@ export func guest(c as Client, vmid as int) {
  *
  * @param g {Guest} the guest
  * @return {string} the path
- * @throws {Error} kind `"proxmox"` when the guest has no node or a wrong kind
+ * @throws {ProxmoxError} kind `"proxmox"` when the guest has no node or a wrong kind
  */
 func guestPath(g as Guest) {
     if ($g.kind != "qemu" and $g.kind != "lxc") {
@@ -1155,7 +1185,7 @@ func guestPath(g as Guest) {
  * @param c {Client} the client
  * @param g {Guest} the guest, from `guests` or `guest`
  * @return {string} the status
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func status(c as Client, g as Guest) {
     def d as json.Value init get($c, guestPath($g) + "/status/current", {});
@@ -1200,7 +1230,7 @@ func upidOf(d as json.Value, what as string) {
  * @param c {Client} the client
  * @param g {Guest} the guest
  * @return {string} the task's UPID; `waitTask` follows it
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func start(c as Client, g as Guest) {
     return power($c, $g, "start", {});
@@ -1212,7 +1242,7 @@ export func start(c as Client, g as Guest) {
  * @param c {Client} the client
  * @param g {Guest} the guest
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func stop(c as Client, g as Guest) {
     return power($c, $g, "stop", {});
@@ -1225,7 +1255,7 @@ export func stop(c as Client, g as Guest) {
  * @param g {Guest} the guest
  * @param timeoutSec {int} seconds to wait before giving up; 0 for Proxmox's default
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func shutdown(c as Client, g as Guest, timeoutSec as int) {
     def params as map of string to string init {};
@@ -1241,7 +1271,7 @@ export func shutdown(c as Client, g as Guest, timeoutSec as int) {
  * @param c {Client} the client
  * @param g {Guest} the guest
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func reboot(c as Client, g as Guest) {
     return power($c, $g, "reboot", {});
@@ -1253,7 +1283,7 @@ export func reboot(c as Client, g as Guest) {
  * @param c {Client} the client
  * @param g {Guest} the guest
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func suspend(c as Client, g as Guest) {
     return power($c, $g, "suspend", {});
@@ -1265,7 +1295,7 @@ export func suspend(c as Client, g as Guest) {
  * @param c {Client} the client
  * @param g {Guest} the guest
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func resume(c as Client, g as Guest) {
     return power($c, $g, "resume", {});
@@ -1277,7 +1307,7 @@ export func resume(c as Client, g as Guest) {
  * @param c {Client} the client
  * @param g {Guest} the guest
  * @return {json.Value} the configuration map, Proxmox's keys as they are
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func config(c as Client, g as Guest) {
     return get($c, guestPath($g) + "/config", {});
@@ -1290,7 +1320,7 @@ export func config(c as Client, g as Guest) {
  * @param g {Guest} the guest
  * @param params {map of string to string} the keys to set
  * @return {null} nothing; the change is done when it returns
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func setConfig(c as Client, g as Guest, params as map of string to string) {
     put($c, guestPath($g) + "/config", $params);
@@ -1302,7 +1332,7 @@ export func setConfig(c as Client, g as Guest, params as map of string to string
  *
  * @param c {Client} the client
  * @return {int} a free id
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func nextId(c as Client) {
     return number(get($c, "/cluster/nextid", {}), "");
@@ -1316,7 +1346,7 @@ export func nextId(c as Client) {
  * @param newid {int} the new guest's id, from `nextId`
  * @param name {string} the new guest's name (its hostname for a container)
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func clone(c as Client, g as Guest, newid as int, name as string) {
     return cloneAs($c, $g, $newid, $name, "1");
@@ -1333,7 +1363,7 @@ export func clone(c as Client, g as Guest, newid as int, name as string) {
  * @param newid {int} the new guest's id, from `nextId`
  * @param name {string} the new guest's name (its hostname for a container)
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` when `g` is not a template, or as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` when `g` is not a template, or as `call`
  */
 export func linkedClone(c as Client, g as Guest, newid as int, name as string) {
     if (not $g.template) {
@@ -1402,7 +1432,7 @@ func create(
  * @param vmid {int} the new VM's id, from `nextId`
  * @param params {map of string to string} the configuration, without `vmid`
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` when the node or id is missing, or as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` when the node or id is missing, or as `call`
  */
 export func createVm(c as Client, node as string, vmid as int, params as map of string to string) {
     return create($c, $node, "qemu", $vmid, $params);
@@ -1420,7 +1450,7 @@ export func createVm(c as Client, node as string, vmid as int, params as map of 
  * @param vmid {int} the new container's id, from `nextId`
  * @param params {map of string to string} the configuration, without `vmid`
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` when the node, id or `ostemplate` is missing,
+ * @throws {ProxmoxError} kind `"proxmox"` when the node, id or `ostemplate` is missing,
  *   or as `call`
  */
 export func createContainer(
@@ -1443,7 +1473,7 @@ export func createContainer(
  * @param purge {bool} also remove it from backup jobs, replication and HA,
  *   and delete disks no configuration refers to
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func destroy(c as Client, g as Guest, purge as bool) {
     def params as map of string to string init {};
@@ -1461,7 +1491,7 @@ export func destroy(c as Client, g as Guest, purge as bool) {
  * @param g {Guest} the guest
  * @return {string} the task's UPID for a VM; "" for a container, which is
  *   converted before the call returns
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func toTemplate(c as Client, g as Guest) {
     def upid as string init field(post($c, guestPath($g) + "/template", {}), "");
@@ -1477,7 +1507,7 @@ export func toTemplate(c as Client, g as Guest) {
  * @param c {Client} the client
  * @param g {Guest} the guest
  * @return {list of Snapshot} the snapshots
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func snapshots(c as Client, g as Guest) {
     def d as json.Value init get($c, guestPath($g) + "/snapshot", {});
@@ -1509,7 +1539,7 @@ export func snapshots(c as Client, g as Guest) {
  * @param name {string} snapshot name: a letter, then letters, digits, `-` or `_`
  * @param description {string} a description; "" for none
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func snapshot(c as Client, g as Guest, name as string, description as string) {
     def params as map of string to string init {"snapname": $name};
@@ -1526,7 +1556,7 @@ export func snapshot(c as Client, g as Guest, name as string, description as str
  * @param g {Guest} the guest
  * @param name {string} the snapshot
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func rollback(c as Client, g as Guest, name as string) {
     def path as string init guestPath($g) + "/snapshot/" + uri.encode($name) + "/rollback";
@@ -1540,7 +1570,7 @@ export func rollback(c as Client, g as Guest, name as string) {
  * @param g {Guest} the guest
  * @param name {string} the snapshot
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func deleteSnapshot(c as Client, g as Guest, name as string) {
     def path as string init guestPath($g) + "/snapshot/" + uri.encode($name);
@@ -1553,7 +1583,7 @@ export func deleteSnapshot(c as Client, g as Guest, name as string) {
  * @param c {Client} the client
  * @param node {string} the node
  * @return {list of Storage} the storages
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func storages(c as Client, node as string) {
     def d as json.Value init get($c, "/nodes/" + uri.encode($node) + "/storage", {});
@@ -1580,7 +1610,7 @@ export func storages(c as Client, node as string) {
  *
  * @param upid {string} the UPID
  * @return {Task} the task, with `status` and `exitStatus` empty
- * @throws {Error} kind `"proxmox"` when it is not a UPID
+ * @throws {ProxmoxError} kind `"proxmox"` when it is not a UPID
  */
 export func parseUpid(upid as string) {
     def parts as list of string init strings.split($upid, ":");
@@ -1615,7 +1645,7 @@ func taskPath(upid as string) {
  * @param c {Client} the client
  * @param upid {string} the UPID an action returned
  * @return {Task} the task; `status` is `running` or `stopped`
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func taskStatus(c as Client, upid as string) {
     def t as Task init parseUpid($upid);
@@ -1634,7 +1664,7 @@ export func taskStatus(c as Client, upid as string) {
  * @param upid {string} the UPID
  * @param timeoutMs {int} how long to wait; 0 waits for ever
  * @return {Task} the stopped task; it succeeded when `exitStatus` is `OK`
- * @throws {Error} kind `"proxmox"` when the time runs out, after too many
+ * @throws {ProxmoxError} kind `"proxmox"` when the time runs out, after too many
  *   failed checks in a row, or on a 4xx answer
  */
 export func waitTask(c as Client, upid as string, timeoutMs as int) {
@@ -1647,6 +1677,11 @@ export func waitTask(c as Client, upid as string, timeoutMs as int) {
             $t = taskStatus($c, $upid);
         } catch (e) {
             $answered = false;
+            # only the deck's own failures can be retried; a cap, a
+            # cancellation or a fault passes on at once
+            if ($e.kind != ERROR_KIND) {
+                throw $e;
+            }
             $failures = retryOrThrow($e, $failures);
         }
         if ($answered) {
@@ -1669,7 +1704,7 @@ export func waitTask(c as Client, upid as string, timeoutMs as int) {
  * @param c {Client} the client
  * @param upid {string} the UPID
  * @return {list of string} the lines, oldest first (Proxmox's first 500)
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func taskLog(c as Client, upid as string) {
     def d as json.Value init get($c, taskPath($upid) + "/log", {"limit": "500"});
@@ -1686,7 +1721,7 @@ export func taskLog(c as Client, upid as string) {
  * @param c {Client} the client
  * @param name {string} the exact name
  * @return {Guest} the guest
- * @throws {Error} kind `"proxmox"` when no guest or several guests have the name
+ * @throws {ProxmoxError} kind `"proxmox"` when no guest or several guests have the name
  */
 export func guestByName(c as Client, name as string) {
     def found as list of Guest init [];
@@ -1712,7 +1747,7 @@ export func guestByName(c as Client, name as string) {
  * @param c {Client} the client
  * @param g {Guest} a running guest
  * @return {list of Interface} the interfaces, loopback included
- * @throws {Error} kind `"proxmox"` as `call`; a VM without a running agent
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`; a VM without a running agent
  *   answers HTTP 500 `QEMU guest agent is not running`
  */
 export func interfaces(c as Client, g as Guest) {
@@ -1791,7 +1826,7 @@ func getAt(v as json.Value, ptr as string) {
  * @param c {Client} the client
  * @param g {Guest} a running guest
  * @return {list of string} e.g. `["10.0.0.5", "2001:db8::5"]`
- * @throws {Error} kind `"proxmox"` as `interfaces`
+ * @throws {ProxmoxError} kind `"proxmox"` as `interfaces`
  */
 export func ipAddresses(c as Client, g as Guest) {
     def out as list of string init [];
@@ -1818,7 +1853,7 @@ export func ipAddresses(c as Client, g as Guest) {
  * @param target {string} the node to move it to
  * @param online {bool} move a running guest; false needs it stopped
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func migrate(c as Client, g as Guest, target as string, online as bool) {
     def params as map of string to string init {"target": $target};
@@ -1838,7 +1873,7 @@ export func migrate(c as Client, g as Guest, target as string, online as bool) {
  * @param disk {string} e.g. `scsi0`, `virtio0` for a VM; `rootfs`, `mp0` for a container
  * @param size {string} `+10G` adds 10 GiB, `64G` sets the size; `K`, `M`, `G`, `T`
  * @return {string} the task's UPID; "" when Proxmox resized before answering
- * @throws {Error} kind `"proxmox"` when the size is malformed, or as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` when the size is malformed, or as `call`
  */
 export func resizeDisk(c as Client, g as Guest, disk as string, size as string) {
     if (not regex.matches("^\\+?[0-9]+(\\.[0-9]+)?[KMGT]?$", $size)) {
@@ -1861,7 +1896,7 @@ export func resizeDisk(c as Client, g as Guest, disk as string, size as string) 
  * @param storage {string} a storage with `backup` content
  * @param mode {string} `snapshot` (no downtime), `suspend` or `stop`
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` on another mode, or as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` on another mode, or as `call`
  */
 export func backup(c as Client, g as Guest, storage as string, mode as string) {
     if (not lists.contains(["snapshot", "suspend", "stop"], $mode)) {
@@ -1885,7 +1920,7 @@ export func backup(c as Client, g as Guest, storage as string, mode as string) {
  * @param storage {string} the storage
  * @param content {string} `images`, `rootdir`, `iso`, `vztmpl`, `backup`; "" for all
  * @return {list of Volume} the volumes
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func contents(c as Client, node as string, storage as string, content as string) {
     def params as map of string to string init {};
@@ -1927,7 +1962,7 @@ func volumeKey(v as Volume) {
  * @param node {string} the node
  * @param storage {string} the storage
  * @return {list of Volume} the backups, oldest first
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func backups(c as Client, node as string, storage as string) {
     return contents($c, $node, $storage, "backup");
@@ -1944,7 +1979,7 @@ export func backups(c as Client, node as string, storage as string) {
  * @param volid {string} the backup, from `backups`
  * @param storage {string} the storage for the disks; "" for the original ones
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` when the archive is no guest backup, or as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` when the archive is no guest backup, or as `call`
  */
 export func restore(c as Client, node as string, vmid as int, volid as string, storage as string) {
     def params as map of string to string init {};
@@ -1977,7 +2012,7 @@ export func restore(c as Client, node as string, vmid as int, volid as string, s
  * @param node {string} a node that sees the storage
  * @param volid {string} the volume, `<storage>:<path>`
  * @return {string} the task's UPID; "" when it was deleted before the answer
- * @throws {Error} kind `"proxmox"` when the id has no storage, or as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` when the id has no storage, or as `call`
  */
 export func deleteVolume(c as Client, node as string, volid as string) {
     def colon as int init strings.indexOf($volid, ":");
@@ -2001,7 +2036,7 @@ export func deleteVolume(c as Client, node as string, volid as string) {
  * @param url {string} where to fetch it
  * @param filename {string} the file name on the storage
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` on another content type, or as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` on another content type, or as `call`
  */
 export func downloadUrl(
     c as Client,
@@ -2030,7 +2065,7 @@ export func downloadUrl(
  * @param c {Client} the client
  * @param node {string} the node
  * @return {list of Appliance} the templates
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func appliances(c as Client, node as string) {
     def d as json.Value init get($c, "/nodes/" + uri.encode($node) + "/aplinfo", {});
@@ -2056,7 +2091,7 @@ export func appliances(c as Client, node as string) {
  * @param storage {string} a storage with `vztmpl` content
  * @param template {string} a `template` from `appliances`
  * @return {string} the task's UPID
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func downloadAppliance(c as Client, node as string, storage as string, template as string) {
     def path as string init "/nodes/" + uri.encode($node) + "/aplinfo";
@@ -2113,7 +2148,7 @@ func cloudInitParams(ci as CloudInit) {
  * @param g {Guest} a VM
  * @param ci {CloudInit} the settings; empty fields are left as they are
  * @return {null} nothing
- * @throws {Error} kind `"proxmox"` for a container, or as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` for a container, or as `call`
  */
 export func setCloudInit(c as Client, g as Guest, ci as CloudInit) {
     if ($g.kind != "qemu") {
@@ -2128,7 +2163,7 @@ export func setCloudInit(c as Client, g as Guest, ci as CloudInit) {
  *
  * @param c {Client} the client
  * @return {list of Task} the tasks; `exitStatus` is set once a task has stopped
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func recentTasks(c as Client) {
     def d as json.Value init get($c, "/cluster/tasks", {});
@@ -2159,7 +2194,7 @@ export func recentTasks(c as Client) {
  * @param c {Client} the client
  * @param node {string} the node
  * @return {json.Value} the status, Proxmox's keys as they are
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func nodeStatus(c as Client, node as string) {
     return get($c, "/nodes/" + uri.encode($node) + "/status", {});
@@ -2186,7 +2221,7 @@ func metricsParams(timeframe as string) {
  * @param node {string} the node
  * @param timeframe {string} `hour`, `day`, `week`, `month` or `year`
  * @return {json.Value} the list of samples, averaged
- * @throws {Error} kind `"proxmox"` on another time frame, or as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` on another time frame, or as `call`
  */
 export func nodeMetrics(c as Client, node as string, timeframe as string) {
     return get($c, "/nodes/" + uri.encode($node) + "/rrddata", metricsParams($timeframe));
@@ -2200,7 +2235,7 @@ export func nodeMetrics(c as Client, node as string, timeframe as string) {
  * @param g {Guest} the guest
  * @param timeframe {string} `hour`, `day`, `week`, `month` or `year`
  * @return {json.Value} the list of samples, averaged
- * @throws {Error} kind `"proxmox"` on another time frame, or as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` on another time frame, or as `call`
  */
 export func guestMetrics(c as Client, g as Guest, timeframe as string) {
     return get($c, guestPath($g) + "/rrddata", metricsParams($timeframe));
@@ -2211,7 +2246,7 @@ export func guestMetrics(c as Client, g as Guest, timeframe as string) {
  *
  * @param c {Client} the client
  * @return {list of Pool} the pools
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func pools(c as Client) {
     def d as json.Value init get($c, "/pools", {});
@@ -2229,7 +2264,7 @@ export func pools(c as Client) {
  * @param poolid {string} the pool id
  * @param comment {string} a comment; "" for none
  * @return {null} nothing
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func createPool(c as Client, poolid as string, comment as string) {
     def params as map of string to string init {"poolid": $poolid};
@@ -2247,7 +2282,7 @@ export func createPool(c as Client, poolid as string, comment as string) {
  * @param poolid {string} the pool
  * @param vmids {list of int} the guests
  * @return {null} nothing
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func addToPool(c as Client, poolid as string, vmids as list of int) {
     def ids as list of string init [];
@@ -2264,7 +2299,7 @@ export func addToPool(c as Client, poolid as string, vmids as list of int) {
  * @param c {Client} the client
  * @param poolid {string} the pool
  * @return {null} nothing
- * @throws {Error} kind `"proxmox"` as `call`; Proxmox refuses a pool with members
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`; Proxmox refuses a pool with members
  */
 export func deletePool(c as Client, poolid as string) {
     delete($c, "/pools/" + uri.encode($poolid), {});
@@ -2289,7 +2324,7 @@ func haSid(g as Guest) {
  *
  * @param c {Client} the client
  * @return {list of HaResource} the HA resources
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func haResources(c as Client) {
     def d as json.Value init get($c, "/cluster/ha/resources", {});
@@ -2312,7 +2347,7 @@ export func haResources(c as Client) {
  * @param g {Guest} the guest
  * @param state {string} `started`, `stopped`, `disabled` or `ignored`
  * @return {null} nothing
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func enableHa(c as Client, g as Guest, state as string) {
     post($c, "/cluster/ha/resources", {"sid": haSid($g), "state": $state});
@@ -2325,7 +2360,7 @@ export func enableHa(c as Client, g as Guest, state as string) {
  * @param c {Client} the client
  * @param g {Guest} the guest
  * @return {null} nothing
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func disableHa(c as Client, g as Guest) {
     delete($c, "/cluster/ha/resources/" + uri.encode(haSid($g)), {});
@@ -2339,7 +2374,7 @@ export func disableHa(c as Client, g as Guest) {
  * @param c {Client} the client
  * @param g {Guest} the guest
  * @return {list of FirewallRule} the rules
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func firewallRules(c as Client, g as Guest) {
     def d as json.Value init get($c, guestPath($g) + "/firewall/rules", {});
@@ -2369,7 +2404,7 @@ export func firewallRules(c as Client, g as Guest) {
  * @param g {Guest} the guest
  * @param rule {FirewallRule} the rule; `pos` and `enable` are ignored
  * @return {null} nothing
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func addFirewallRule(c as Client, g as Guest, rule as FirewallRule) {
     def params as map of string to string init {
@@ -2401,7 +2436,7 @@ export func addFirewallRule(c as Client, g as Guest, rule as FirewallRule) {
  * @param g {Guest} the guest
  * @param pos {int} the rule's position, from `firewallRules`
  * @return {null} nothing
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func deleteFirewallRule(c as Client, g as Guest, pos as int) {
     delete($c, guestPath($g) + "/firewall/rules/" + convert.toString($pos), {});
@@ -2413,7 +2448,7 @@ export func deleteFirewallRule(c as Client, g as Guest, pos as int) {
  *
  * @param c {Client} the client
  * @return {list of User} the users
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func users(c as Client) {
     def d as json.Value init get($c, "/access/users", {});
@@ -2437,7 +2472,7 @@ export func users(c as Client) {
  *
  * @param c {Client} the client
  * @return {list of Acl} the access control list
- * @throws {Error} kind `"proxmox"` as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` as `call`
  */
 export func permissions(c as Client) {
     def d as json.Value init get($c, "/access/acl", {});
@@ -2485,7 +2520,7 @@ func aclParams(acl as Acl) {
  * @param acl {Acl} the permission, e.g. `PVEVMUser` on `/vms/101` for user
  *   `ada@pve`
  * @return {null} nothing
- * @throws {Error} kind `"proxmox"` on another `type`, or as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` on another `type`, or as `call`
  */
 export func grant(c as Client, acl as Acl) {
     put($c, "/access/acl", aclParams($acl));
@@ -2498,7 +2533,7 @@ export func grant(c as Client, acl as Acl) {
  * @param c {Client} the client
  * @param acl {Acl} the permission, as `permissions` lists it
  * @return {null} nothing
- * @throws {Error} kind `"proxmox"` on another `type`, or as `call`
+ * @throws {ProxmoxError} kind `"proxmox"` on another `type`, or as `call`
  */
 export func revoke(c as Client, acl as Acl) {
     def params as map of string to string init aclParams($acl);
@@ -2543,13 +2578,13 @@ func isLocalAddress(ip as string) {
  * credential does not heal by waiting); a network failure or a 5xx answer
  * is retried up to `MAX_POLL_FAILURES` times in a row.
  *
- * @param e {Error} the failure
+ * @param e {ProxmoxError} the failure
  * @param failures {int} failures in a row so far
  * @return {int} the new count
- * @throws {Error} the failure itself, when it is final
+ * @throws {ProxmoxError} the failure itself, when it is final
  */
-func retryOrThrow(e as Error, failures as int) {
-    if ($e.kind != ERROR_KIND or regex.matches(": HTTP 4[0-9][0-9]", $e.message)) {
+func retryOrThrow(e as ProxmoxError, failures as int) {
+    if ($e.status >= 400 and $e.status <= 499) {
         throw $e;
     }
     if ($failures + 1 >= MAX_POLL_FAILURES) {
@@ -2583,7 +2618,7 @@ func ticketIssued(ticket as string) {
  *
  * @param c {Client} the client
  * @return {Client} the client with a ticket valid for at least an hour
- * @throws {Error} kind `"proxmox"` when the ticket has run out (log in again),
+ * @throws {ProxmoxError} kind `"proxmox"` when the ticket has run out (log in again),
  *   or as `renew`
  */
 export func fresh(c as Client) {

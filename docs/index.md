@@ -42,8 +42,9 @@ booleans as `"1"` and `"0"`.
 
 ## Errors
 
-Every failure is `Error{kind: "proxmox"}`, with a message that starts with
-`proxmox:` and names the request:
+Every failure is a `proxmox.ProxmoxError` (kind `"proxmox"`), with a message
+that starts with `proxmox:` and names the request, and the HTTP `status` the
+API answered as a field (0 when there was no answer):
 
 - a refused request: `proxmox: POST /nodes/pve1/qemu/101/status/start: HTTP 500: VM 101 already running`.
   The reason is Proxmox's own. A parameter check adds each parameter's
@@ -56,9 +57,15 @@ Every failure is `Error{kind: "proxmox"}`, with a message that starts with
 try {
     proxmox.start($c, proxmox.guest($c, 101));
 } catch (e) {
-    io.printf("%s\n", $e.message);
+    if ($e.kind == "proxmox" and $e.status == 401) {
+        io.printf("log in again\n");
+    } else {
+        io.printf("%s\n", $e.message);
+    }
 }
 ```
+
+A reply over its size cap is kind `"limit"` instead (a plain `Error`).
 
 Writes are never retried. `withRetries` retries only GETs answered 429 or 5xx.
 
