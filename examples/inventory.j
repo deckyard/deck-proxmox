@@ -40,7 +40,7 @@ io.printf("Proxmox VE %s\n\n", $v.version);
 for (def n in proxmox.nodes($c)) {
     def gib as int init 1073741824;
     io.printf(
-        "%-12s %-8s %3d CPUs  %5.1f%% load  %d/%d GiB\n",
+        "%s|pad=12 %s|pad=8 %d|pad=3|align=right CPUs  %f|prec=1|pad=5|align=right%% load  %d/%d GiB\n",
         $n.node,
         $n.status,
         $n.maxcpu,
@@ -49,7 +49,11 @@ for (def n in proxmox.nodes($c)) {
         $n.maxmem // $gib);
     if ($n.status == "online") {
         for (def s in proxmox.storages($c, $n.node)) {
-            io.printf("    %-16s %-8s %d GiB free\n", $s.storage, $s.type, $s.avail // $gib);
+            io.printf(
+                "    %s|pad=16 %s|pad=8 %d GiB free\n",
+                $s.storage,
+                $s.type,
+                $s.avail // $gib);
         }
     }
 }
@@ -60,5 +64,11 @@ for (def g in proxmox.guests($c)) {
     if ($g.template) {
         $what = $what + " template";
     }
-    io.printf("%6d  %-20s %-14s %-8s %s\n", $g.vmid, $g.name, $what, $g.node, $g.status);
+    io.printf(
+        "%d|pad=6|align=right  %s|pad=20 %s|pad=14 %s|pad=8 %s\n",
+        $g.vmid,
+        $g.name,
+        $what,
+        $g.node,
+        $g.status);
 }

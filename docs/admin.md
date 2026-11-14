@@ -15,7 +15,7 @@ import "@deckyard/proxmox/" as proxmox;
 
 def samples as json.Value init proxmox.guestMetrics($c, proxmox.guest($c, 101), "hour");
 def last as int init json.length($samples) - 1;
-io.printf("cpu %.1f%%\n", json.asFloat($samples, "/" + convert.toString($last) + "/cpu") * 100.0);
+io.printf("cpu %f|prec=1%%\n", json.asFloat($samples, "/" + convert.toString($last) + "/cpu") * 100.0);
 ```
 
 `proxmox.recentTasks` lists the cluster's recent tasks, running ones

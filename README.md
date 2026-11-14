@@ -45,7 +45,7 @@ $c = proxmox.withCaCert($c, fs.readBytes("pve-root-ca.pem"));
 $c = proxmox.withToken($c, "root@pam!automation", os.getEnv("PVE_TOKEN_SECRET"));
 
 for (def g in proxmox.guests($c)) {
-    io.printf("%6d %-20s %s\n", $g.vmid, $g.name, $g.status);
+    io.printf("%d|pad=6|align=right %s|pad=20 %s\n", $g.vmid, $g.name, $g.status);
 }
 
 def web as proxmox.Guest init proxmox.guest($c, 101);

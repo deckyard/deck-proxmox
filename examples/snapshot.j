@@ -45,7 +45,7 @@ if ($t.exitStatus != "OK") {
 }
 
 for (def s in proxmox.snapshots($c, $g)) {
-    io.printf("  %-16s parent %-16s %s\n", $s.name, $s.parent, $s.description);
+    io.printf("  %s|pad=16 parent %s|pad=16 %s\n", $s.name, $s.parent, $s.description);
 }
 
 if (os.getEnv("PVE_CLEANUP") == "1") {
