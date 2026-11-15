@@ -11,8 +11,10 @@ import "@deckyard/proxmox/" as proxmox;
 ```
 
 Every function that sends a request throws a `ProxmoxError` (kind `"proxmox"`,
-with the HTTP `status`) when it fails; a reply over its size cap is kind
-`"limit"`. A `guest` argument is a `Guest` from `proxmox.guests` or
+with the HTTP `status`) when it fails, except the generic kinds: a reply over
+its size cap is kind `"limit"`, a reply that does not come in time
+`"timeout"`, a connection closed mid-reply `"closed"`, and a host that cannot
+be reached throws `net.NetError` (kind `"net"`). A `guest` argument is a `Guest` from `proxmox.guests` or
 `proxmox.guest`; an `upid` is the string an action returned.
 
 ## Constants

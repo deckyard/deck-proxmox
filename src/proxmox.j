@@ -15,7 +15,11 @@
  * from `login`. Proxmox hosts usually present a self-signed certificate:
  * trust it with `withCaCert`, or turn checking off with `withInsecure`.
  * Every failure is a `ProxmoxError` (kind `"proxmox"`) carrying the HTTP
- * `status` the API answered; a reply over its size cap is kind `"limit"`.
+ * `status` the API answered, except the generic kinds: a reply over its size
+ * or nesting cap is kind `"limit"`, a reply that does not come in time
+ * `"timeout"`, a connection closed mid-reply `"closed"`, a cancelled task
+ * `"cancelled"`, and a host that cannot be reached throws the transport's
+ * `net.NetError` (kind `"net"`) unchanged.
  *
  * @module proxmox
  * @see https://pve.proxmox.com/pve-docs/api-viewer/
@@ -30,6 +34,7 @@ use convert;
 use json;
 use lists;
 use maps;
+use net;
 use regex;
 use strings;
 use time;
@@ -403,6 +408,15 @@ func failStatus(message as string, status as int) {
 # failTransport throws the error of a request that got no usable answer: a
 # reached cap (an `http` body cap) stays kind "limit", anything else is a
 # ProxmoxError; the message is `proxmox: <verb> <path>: <cause>` either way.
+# The other generic kinds (`isGeneric`) never get here: `call` passes them on
+# unchanged.
+
+# isGeneric tells whether an error kind is one every library shares, which
+# the deck passes on instead of rewrapping.
+func isGeneric(kind as string) {
+    return $kind == "limit" or $kind == "timeout" or $kind == "closed" or $kind == "net" or
+        $kind == "cancelled";
+}
 func failTransport(what as string, e as Error) {
     if ($e.kind == "limit") {
         throw Error{kind: "limit", message: "proxmox: " + $what + ": " + $e.message};
@@ -712,8 +726,11 @@ func authHeaders(c as Client, method as string) {
  * @param path {string} the path under `/api2/json`, e.g. `/nodes/pve1/qemu`
  * @param params {map of string to string} the parameters; `{}` for none
  * @return {json.Value} the reply's `data` member; JSON `null` for none
- * @throws {ProxmoxError} kind `"proxmox"` on a bad path, a network failure or a reply
- *   that is not 2xx; the message names the status and Proxmox's reason
+ * @throws {ProxmoxError} kind `"proxmox"` on a bad path, a malformed reply or a
+ *   reply that is not 2xx; the message names the status and Proxmox's reason
+ * @throws {Error} kind `"limit"` for a reply over a cap, `"timeout"` when no
+ *   answer comes in time, `"closed"` for a connection closed mid-reply
+ * @throws {net.NetError} kind `"net"` when the host cannot be reached
  */
 export func call(c as Client, method as string, path as string, params as map of string to string) {
     def verb as string init strings.upper($method);
@@ -744,6 +761,11 @@ export func call(c as Client, method as string, path as string, params as map of
     try {
         $r = http.send($verb, $url, $headers, $body, $o);
     } catch (e) {
+        # a transport failure, a deadline, a closed connection or a
+        # cancellation goes on as it is; a cap keeps its kind in failTransport
+        if (isGeneric($e.kind) and $e.kind != "limit") {
+            throw $e;
+        }
         failTransport($verb + " " + $path, $e);
     }
     if ($r.status < 200 or $r.status >= 300) {
@@ -820,6 +842,10 @@ func dataOf(body as string, what as string) {
     try {
         $doc = json.decode($body);
     } catch (e) {
+        # the decoder's nesting and node caps are reached caps
+        if (isGeneric($e.kind)) {
+            throw $e;
+        }
         fail($what + ": the reply is not JSON");
     }
     if (json.typeOf($doc) != "map" or not json.has($doc, "/data")) {
@@ -1657,8 +1683,10 @@ export func taskStatus(c as Client, upid as string) {
 
 /**
  * Wait until a task stops, asking every `pollMs` (see `withPollInterval`).
- * A network failure or a 5xx answer is retried, up to `MAX_POLL_FAILURES`
- * times in a row; a 4xx answer is not.
+ * A timeout, a 5xx answer or a status request the host never got (a
+ * `net.NetError` with `sent` false) is retried, up to `MAX_POLL_FAILURES`
+ * times in a row; a 4xx answer, and a connection lost after the request was
+ * sent, are not.
  *
  * @param c {Client} the client
  * @param upid {string} the UPID
@@ -1666,6 +1694,10 @@ export func taskStatus(c as Client, upid as string) {
  * @return {Task} the stopped task; it succeeded when `exitStatus` is `OK`
  * @throws {ProxmoxError} kind `"proxmox"` when the time runs out, after too many
  *   failed checks in a row, or on a 4xx answer
+ * @throws {Error} kind `"timeout"` after too many unanswered checks in a row,
+ *   `"closed"` at once for a reply cut short
+ * @throws {net.NetError} kind `"net"` after too many refused checks in a row,
+ *   or at once for a connection lost after the request was sent
  */
 export func waitTask(c as Client, upid as string, timeoutMs as int) {
     def started as time.Time init time.now();
@@ -1677,12 +1709,23 @@ export func waitTask(c as Client, upid as string, timeoutMs as int) {
             $t = taskStatus($c, $upid);
         } catch (e) {
             $answered = false;
-            # only the deck's own failures can be retried; a cap, a
-            # cancellation or a fault passes on at once
-            if ($e.kind != ERROR_KIND) {
+            if ($e.kind == "net") {
+                # repeated only when the host never got the request
+                def lost as net.NetError init $e;
+                if ($lost.sent or $lost.replied or $failures + 1 >= MAX_POLL_FAILURES) {
+                    throw $e;
+                }
+                $failures = $failures + 1;
+            } elseif ($e.kind == "timeout" and $failures + 1 < MAX_POLL_FAILURES) {
+                # no answer in time: the status check is asked again
+                $failures = $failures + 1;
+            } elseif ($e.kind != ERROR_KIND) {
+                # a cap, a connection closed mid-reply, a cancellation or a
+                # fault passes on at once
                 throw $e;
+            } else {
+                $failures = retryOrThrow($e, $failures);
             }
-            $failures = retryOrThrow($e, $failures);
         }
         if ($answered) {
             if ($t.status == "stopped") {
@@ -2575,8 +2618,8 @@ func isLocalAddress(ip as string) {
 
 /**
  * Count a failed status check, or give up. A 4xx answer is final (a bad
- * credential does not heal by waiting); a network failure or a 5xx answer
- * is retried up to `MAX_POLL_FAILURES` times in a row.
+ * credential does not heal by waiting); a 5xx answer is retried up to
+ * `MAX_POLL_FAILURES` times in a row.
  *
  * @param e {ProxmoxError} the failure
  * @param failures {int} failures in a row so far

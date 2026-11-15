@@ -49,7 +49,6 @@ API answered as a field (0 when there was no answer):
 - a refused request: `proxmox: POST /nodes/pve1/qemu/101/status/start: HTTP 500: VM 101 already running`.
   The reason is Proxmox's own. A parameter check adds each parameter's
   complaint in brackets.
-- a network failure or timeout, with the `http` module's message.
 - a reply that is not JSON, a login without a ticket, a malformed UPID, a
   guest id that does not exist, an API path that could leave the host.
 
@@ -65,7 +64,15 @@ try {
 }
 ```
 
-A reply over its size cap is kind `"limit"` instead (a plain `Error`).
+A reply over its size cap, or a JSON reply nested past the decoder's cap, is
+kind `"limit"` instead (a plain `Error`); a reply that does not come within
+the timeout is kind `"timeout"`, a connection closed mid-reply kind
+`"closed"`, and a cancelled task kind `"cancelled"`. A host
+that cannot be reached (refused, reset, unreachable, no DNS answer, a failed
+TLS handshake, closed before any reply) throws the `net.NetError` (kind
+`"net"`) that `http` raised, unchanged: its `reason`, `op`, `sent` and
+`replied` fields tell what happened, and a request that was not `sent` never
+reached the host.
 
 Writes are never retried. `withRetries` retries only GETs answered 429 or 5xx.
 

@@ -51,9 +51,13 @@ if ($t.exitStatus != "OK") {
 ```
 
 `proxmox.waitTask` asks once a second (`proxmox.withPollInterval` changes it)
-and throws when the timeout runs out; 0 waits for ever. A network failure or
-a 5xx answer during the wait is retried, up to `MAX_POLL_FAILURES` (5) in a
-row; a 4xx answer, such as an expired ticket, ends the wait at once. A stopped task
+and throws when the timeout runs out; 0 waits for ever. A timeout, a 5xx
+answer, or a status request the host never got (a `net.NetError` that was not
+`sent`, such as a refused connection) during the wait is retried, up to
+`MAX_POLL_FAILURES` (5) in a row; a 4xx answer, such as an expired ticket, and
+a connection lost after the request was sent (a `net.NetError` that was `sent`,
+or kind `"closed"`) end the wait at once. After too many timeouts in a row the
+last one is thrown, kind `"timeout"`. A stopped task
 succeeded when `exitStatus` is `OK`; otherwise it holds the error. A finished
 task does not throw: check `exitStatus`.
 

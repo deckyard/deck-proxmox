@@ -10,6 +10,7 @@
  * and hands back what it received.
  */
 use httpd;
+use net;
 use task;
 use testing;
 
@@ -411,7 +412,7 @@ func testRefusalsBecomeDeckErrors() {
         testing.assertTrue(strings.contains($e.message, "not JSON"));
     }
     finish($f);
-    testing.assertThrows("unreachable", ERROR_KIND);
+    testing.assertThrows("unreachable", "net");
 }
 
 func testGetSendsTheQueryAndTheToken() {
@@ -1210,10 +1211,206 @@ func testLocalFailuresAndCaps() {
             "proxmox: GET /version: http: response body exceeds 10 bytes");
     }
     try {
-        failTransport("GET /version", Error{kind: "http", message: "connection refused"});
+        failTransport("GET /version", Error{kind: "http", message: "malformed status line"});
         missed("failTransport did not throw");
     } catch (e) {
         testing.assertEqual($e.kind, ERROR_KIND);
         testing.assertEqual($e.status, 0);
+    }
+}
+
+/**
+ * A loopback address nothing listens on.
+ *
+ * @return {string} `127.0.0.1:port` of a listener already closed
+ */
+func closedAddress() {
+    def l as net.Listener init net.listen("127.0.0.1:0");
+    def address as string init net.address($l);
+    net.close($l);
+    return $address;
+}
+
+# A host that cannot be reached is the transport's net.NetError, passed on
+# with its fields.
+func testTransportFailurePassesOn() {
+    def c as Client init withToken(
+        client("http://" + closedAddress()),
+        "root@pam!ci",
+        "0b1c-secret");
+    try {
+        get($c, "/version", {});
+        missed("a refused connection passed");
+    } catch (e) {
+        testing.assertEqual($e.kind, "net");
+        def n as net.NetError init $e;
+        testing.assertEqual($n.reason, "refused");
+        testing.assertEqual($n.op, "connect");
+        testing.assertFalse($n.sent);
+        testing.assertFalse($n.replied);
+        testing.assertFalse(strings.contains($n.message, "0b1c-secret"));
+    }
+}
+
+# waitTask repeats a status check the host never got (refused), up to the
+# limit, and passes the NetError on after it.
+func testWaitTaskRetriesRefusedChecks() {
+    def c as Client init withPollInterval(
+        withToken(client("http://" + closedAddress()), "root@pam!ci", "s"),
+        1);
+    try {
+        waitTask($c, UPID, 0);
+        missed("waitTask retried for ever");
+    } catch (e) {
+        testing.assertEqual($e.kind, "net");
+        def n as net.NetError init $e;
+        testing.assertEqual($n.reason, "refused");
+    }
+}
+
+# A status check lost after it was sent is not repeated: the host may have
+# carried it out.
+func testWaitTaskDoesNotRepeatASentCheck() {
+    def l as net.Listener init net.listen("127.0.0.1:0");
+    def t as task of int init spawn {
+        def accepted as int init 0;
+        while (true) {
+            def conn as net.Conn;
+            try {
+                $conn = net.accept($l);
+            } catch (e) {
+                return $accepted;
+            }
+            $accepted = $accepted + 1;
+            net.readBytes($conn, 65536);
+            net.close($conn);
+        }
+        return $accepted;
+    };
+    def c as Client init withPollInterval(
+        withToken(client("http://" + net.address($l)), "root@pam!ci", "s"),
+        1);
+    try {
+        waitTask($c, UPID, 0);
+        missed("a closed connection passed");
+    } catch (e) {
+        testing.assertEqual($e.kind, "net");
+        def n as net.NetError init $e;
+        testing.assertEqual($n.reason, "closed");
+        testing.assertTrue($n.sent);
+        testing.assertFalse($n.replied);
+    }
+    net.close($l);
+    testing.assertEqual(task.wait($t), 1);
+}
+
+/**
+ * Serve a loopback listener with one canned answer per connection (or none,
+ * to let the client wait), until the listener is closed.
+ *
+ * @param l {net.Listener} the listener
+ * @param answer {string} what to write after reading the request; "" to
+ *   write nothing and keep the connection open
+ * @return {task of int} the server task; it returns the connections served
+ */
+func serveCanned(l as net.Listener, answer as string) {
+    return spawn {
+        def served as int init 0;
+        def open as list of net.Conn init [];
+        while (true) {
+            def conn as net.Conn;
+            try {
+                $conn = net.accept($l);
+            } catch (e) {
+                for (def held in $open) {
+                    net.close($held);
+                }
+                return $served;
+            }
+            $served = $served + 1;
+            net.readBytes($conn, 65536);
+            if ($answer == "") {
+                $open[] = $conn;
+            } else {
+                net.writeBytes($conn, convert.bytesFromString("utf-8", $answer));
+                net.close($conn);
+            }
+        }
+        return $served;
+    };
+}
+
+/** A reply that announces 500 bytes and sends one. */
+def const CUT_REPLY as string init "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" +
+    "Content-Length: 500\r\n\r\n\{";
+
+/**
+ * A token client for a listener, with a short timeout and fast polling.
+ *
+ * @param l {net.Listener} the listener
+ * @return {Client} the client
+ */
+func cannedClient(l as net.Listener) {
+    return withPollInterval(
+        withTimeout(withToken(client("http://" + net.address($l)), "root@pam!ci", "s"), 200),
+        1);
+}
+
+# A deadline and a connection closed mid-reply keep their generic kinds.
+func testTimeoutAndClosedPassOn() {
+    def l as net.Listener init net.listen("127.0.0.1:0");
+    def t as task of int init serveCanned($l, "");
+    try {
+        get(cannedClient($l), "/version", {});
+        missed("a silent host passed");
+    } catch (e) {
+        testing.assertEqual($e.kind, "timeout");
+    }
+    net.close($l);
+    task.wait($t);
+    def m as net.Listener init net.listen("127.0.0.1:0");
+    def u as task of int init serveCanned($m, CUT_REPLY);
+    try {
+        get(cannedClient($m), "/version", {});
+        missed("a cut reply passed");
+    } catch (e) {
+        testing.assertEqual($e.kind, "closed");
+    }
+    net.close($m);
+    task.wait($u);
+}
+
+# waitTask asks again after a timeout, up to the limit, then passes the
+# timeout on; a reply cut short ends the wait at once.
+func testWaitTaskOnTimeoutsAndCutReplies() {
+    def l as net.Listener init net.listen("127.0.0.1:0");
+    def t as task of int init serveCanned($l, "");
+    try {
+        waitTask(cannedClient($l), UPID, 0);
+        missed("waitTask waited for ever");
+    } catch (e) {
+        testing.assertEqual($e.kind, "timeout");
+    }
+    net.close($l);
+    testing.assertEqual(task.wait($t), MAX_POLL_FAILURES);
+    def m as net.Listener init net.listen("127.0.0.1:0");
+    def u as task of int init serveCanned($m, CUT_REPLY);
+    try {
+        waitTask(cannedClient($m), UPID, 0);
+        missed("a cut reply passed");
+    } catch (e) {
+        testing.assertEqual($e.kind, "closed");
+    }
+    net.close($m);
+    testing.assertEqual(task.wait($u), 1);
+}
+
+# A JSON reply past the decoder's nesting cap is a reached cap.
+func testDeepReplyIsALimit() {
+    try {
+        dataOf(strings.repeat("[", 1001) + strings.repeat("]", 1001), "GET /version");
+        missed("a deep reply passed");
+    } catch (e) {
+        testing.assertEqual($e.kind, "limit");
     }
 }
