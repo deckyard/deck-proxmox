@@ -129,14 +129,3 @@ one.
 - `net.NetError` and the `"net"` kind (`jennifer`'s M28.65, transport
   errors have their own kind).
 - Floor `>=0.26.0`.
-
-## History
-
-- 2026-11-06: link-local addresses dropped from guest IP lists.
-- 2026-11-11: floor raised to 0.26.0.
-- 2026-11-14: `ProxmoxError` with the HTTP status; `waitTask` decides on
-  `status` instead of the message.
-- 2026-11-15: a host that cannot be reached throws the transport's
-  `net.NetError`; `waitTask` repeats only a status check that was never
-  sent. Timeouts, mid-reply closes, cancellations and the JSON decoder's
-  caps pass on with their generic kinds; version 0.2.0.
