@@ -382,7 +382,7 @@ export def struct Acl {
  *
  * @field kind {string} always `"proxmox"` (`ERROR_KIND`)
  * @field message {string} `proxmox: ` and what failed, for a refused request `<verb> <path>: HTTP <status>: <reason>`
- * @field status {int} the HTTP status the API answered (401, 403, 500, 595, ...); 0 when no answer was read or the failure is a local check
+ * @field status {int} the HTTP status the API answered (401, 403, 500, 595, ...); 0 when the deck raised the error itself: a local check (bad input, no such guest, a malformed UPID, `waitTask` out of time), a 2xx reply it cannot use, or an `http` failure of a non-generic kind. Never a network failure, which is kind "net"; not a sign to retry
  */
 export def struct ProxmoxError {
     kind as string,
@@ -1692,14 +1692,17 @@ export func taskStatus(c as Client, upid as string) {
  * @param upid {string} the UPID
  * @param timeoutMs {int} how long to wait; 0 waits for ever
  * @return {Task} the stopped task; it succeeded when `exitStatus` is `OK`
- * @throws {ProxmoxError} kind `"proxmox"` when the time runs out, after too many
- *   failed checks in a row, or on a 4xx answer
+ * @throws {ProxmoxError} kind `"proxmox"` at once for a malformed UPID; when the
+ *   time runs out, after too many failed checks in a row, or on a 4xx answer
  * @throws {Error} kind `"timeout"` after too many unanswered checks in a row,
  *   `"closed"` at once for a reply cut short
  * @throws {net.NetError} kind `"net"` after too many refused checks in a row,
  *   or at once for a connection lost after the request was sent
  */
 export func waitTask(c as Client, upid as string, timeoutMs as int) {
+    # a malformed UPID is a status-0 ProxmoxError, which the loop below
+    # would retry like a 5xx answer
+    parseUpid($upid);
     def started as time.Time init time.now();
     def failures as int init 0;
     while (true) {

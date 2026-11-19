@@ -36,7 +36,7 @@ Every error of kind `"proxmox"`.
 |---|---|
 | `kind as string` | always `"proxmox"` |
 | `message as string` | `proxmox: <verb> <path>: HTTP <status>: <reason>`, or what went wrong |
-| `status as int` | the HTTP status the API answered; 0 when none was read or for a local check |
+| `status as int` | the HTTP status the API answered; 0 when the deck raised it itself (a local check such as `no guest 9999`, an unusable 2xx reply, a non-generic `http` failure); never a network failure (kind `"net"`) |
 
 ### `Client`
 

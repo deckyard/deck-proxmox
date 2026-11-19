@@ -42,15 +42,26 @@ booleans as `"1"` and `"0"`.
 
 ## Errors
 
-Every failure is a `proxmox.ProxmoxError` (kind `"proxmox"`), with a message
-that starts with `proxmox:` and names the request, and the HTTP `status` the
-API answered as a field (0 when there was no answer):
+Every failure of kind `"proxmox"` is a `proxmox.ProxmoxError`, with a
+message that starts with `proxmox:` and names the request, and a `status`
+field:
 
-- a refused request: `proxmox: POST /nodes/pve1/qemu/101/status/start: HTTP 500: VM 101 already running`.
+- a refused request has the HTTP status the API answered:
+  `proxmox: POST /nodes/pve1/qemu/101/status/start: HTTP 500: VM 101 already running`.
   The reason is Proxmox's own. A parameter check adds each parameter's
   complaint in brackets.
-- a reply that is not JSON, a login without a ticket, a malformed UPID, a
-  guest id that does not exist, an API path that could leave the host.
+- status 0 means the deck raised the error itself, with no HTTP status to
+  report. Most are local checks, final whatever you repeat: input it
+  refuses (an empty host, a malformed token id, UPID, disk size or volume
+  id, an API path that could leave the host), a lookup that found nothing
+  (`guest($c, 9999)`: `proxmox: no guest 9999`; `guestByName` with no match
+  or several), `waitTask` running out of time, an expired ticket in
+  `renew`. The others are a 2xx reply it cannot use (not JSON, a login
+  without a ticket, no task id) and an `http` failure of a kind other than
+  the generic ones below (a malformed HTTP reply, say).
+
+Status 0 is not a network failure, and not a sign to retry: a host that
+cannot be reached is kind `"net"` (below), never a `ProxmoxError`.
 
 ```jennifer
 try {

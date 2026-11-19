@@ -1252,6 +1252,21 @@ func testTransportFailurePassesOn() {
     }
 }
 
+# A malformed UPID is refused at once. It was retried like a 5xx answer
+# (status 0 is not 4xx), so the 1000 ms timeout ran out first.
+func testWaitTaskRefusesAMalformedUpidAtOnce() {
+    def c as Client init withPollInterval(
+        withToken(client("http://" + closedAddress()), "root@pam!ci", "s"),
+        1500);
+    try {
+        waitTask($c, "UPID:pve1:broken", 1000);
+        missed("waitTask accepted a malformed UPID");
+    } catch (e) {
+        testing.assertEqual($e.kind, ERROR_KIND);
+        testing.assertEqual($e.message, "proxmox: not a UPID: UPID:pve1:broken");
+    }
+}
+
 # waitTask repeats a status check the host never got (refused), up to the
 # limit, and passes the NetError on after it.
 func testWaitTaskRetriesRefusedChecks() {

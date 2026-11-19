@@ -46,11 +46,12 @@ whose volumes it restores through Proxmox VE.
   declared without `client` and has 0).
 - **Retries.** Writes are never retried: they need not be idempotent.
   `withRetries` lets `http` repeat a GET answered 429 or 5xx. `waitTask`
-  repeats a status check after a timeout, a 5xx answer, or a
-  `net.NetError` whose request was never sent, up to `MAX_POLL_FAILURES` in
+  repeats a status check after a timeout, a 5xx answer, a status-0 reply
+  it cannot use, or a `net.NetError` whose request was never sent, up to `MAX_POLL_FAILURES` in
   a row, then throws the last failure with its kind. A 4xx answer is final
   (a bad credential does not heal by waiting), and so is a connection lost
   after the request was sent (a sent `net.NetError` or kind `"closed"`).
+  A malformed UPID is refused before the first check.
 - **Guests.** `guests` lists `/cluster/resources?type=vm` sorted by vmid;
   `guest` and `guestByName` filter it, and `guestByName` fails on a
   duplicate name rather than picking one.
@@ -63,8 +64,11 @@ whose volumes it restores through Proxmox VE.
 ## Errors
 
 Every failure of kind `"proxmox"` (`ERROR_KIND`) is a `ProxmoxError` with
-`status`, the HTTP status the API answered (0 for a local check or when no
-answer was read). Messages start with `proxmox: ` and name the request:
+`status`, the HTTP status the API answered. 0 means the deck raised it
+itself: a local check (refused input, no such guest, a malformed UPID,
+`waitTask` out of time, an expired ticket), a 2xx reply it cannot use, or
+an `http` failure of a non-generic kind. Network failures never carry
+status 0; they are `net.NetError` (kind `"net"`). Messages start with `proxmox: ` and name the request:
 `proxmox: <verb> <path>: HTTP <status>: <reason>`. `waitTask` reads
 `status`, never the message, to decide whether to retry.
 
