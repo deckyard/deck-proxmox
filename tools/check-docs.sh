@@ -17,10 +17,11 @@
 #   5  docblock @param / @field match the declaration they sit on
 #   6  relative links resolve and stay inside docs/, the book outline covers
 #      every page, and docs/internal/directories.md (if any) lists the tree
-#   7  Jennifer's own `docblock` module accepts every docblock in src/, on
+#   7  every ```jennifer block in docs/ and README.md parses (see below)
+#   8  Jennifer's own `docblock` module accepts every docblock in src/, on
 #      private functions too: every @param names a parameter and every
 #      parameter has one, and an enum describes its variants in prose
-#   8  only with a tools/doc-claims.j: every value a guide claims is what the
+#   9  only with a tools/doc-claims.j: every value a guide claims is what the
 #      code returns, every annotated number is one of those values, and every
 #      listing the docs print is byte-for-byte what the code emits
 #
@@ -50,6 +51,18 @@
 # signature, value or tag that disagrees with the code - always fails. Shrink
 # the file; do not grow it.
 #
+# Every ```jennifer block is parsed, never run: a syntax error in one fails the
+# check, reported at the line of its opening fence. A block is a fragment, so
+# it may use variables, functions and modules it does not define or import;
+# only the syntax counts. A `...` standing for code left out is accepted, as a
+# line of its own, as `{ ... }` or in place of an expression (`["Jan", ...]`).
+# Blocks fenced as anything else are not read. To exempt
+# a block, put the line
+#
+#   <!-- no-check -->
+#
+# directly before its opening fence, with no blank line between.
+#
 # `--todo` prints every current gap instead of checking, to seed the file:
 #
 #   tools/check-docs.sh --todo > docs/.cheatsheet-todo
@@ -69,9 +82,9 @@ sheet="$(deck_cheatsheet)"
 mode="${1:-check}"
 [[ "$mode" == check || "$mode" == --todo ]] || deck_die "usage: tools/check-docs.sh [--todo]"
 
-# --- 1-6: the static half ---------------------------------------------------
-python3 - "$sheet" "$mode" <<'PYSTATIC'
-import re, glob, os, sys
+# --- 1-7: the static half, and the parse of every code block ----------------
+JENNIFER="$JENNIFER" python3 - "$sheet" "$mode" <<'PYSTATIC'
+import re, glob, os, sys, json, shlex, shutil, subprocess, tempfile
 
 SLUG, SHAPE = os.environ['DECK_SLUG'], os.environ['DECK_SHAPE']
 SHEET, LIST_GAPS = sys.argv[1], sys.argv[2] == '--todo'
@@ -398,6 +411,127 @@ if LIST_GAPS:
     print('\n'.join(sorted(gaps)))
     sys.exit(0)
 
+# ---- 7: every ```jennifer block parses -----------------------------------
+# Jennifer has no parse-only command: `fmt` only lexes, and `ast`, `lint` and
+# `run` all go on to scope analysis, which rejects the undefined names a
+# fragment is allowed to use. Scope analysis only starts once the whole file has
+# parsed, and it walks the top level in order, so each block is written out
+# behind a first line that uses an undefined variable. When the first error
+# `jennifer lint` reports is on that line, everything after it parsed. One lint
+# run takes every block; its JSON output keeps lex (L001), parse (L002) and
+# preprocess (L003) errors apart from the findings. The files are written
+# inside the checkout, because in CI the interpreter runs in a container that
+# only has the workspace mounted.
+SENTINEL = 'def zzDocsCheck as int init $zzDocsCheckSentinel;'
+FENCE = re.compile(r'^(\s*)(`{3,}|~{3,})\s*([^\s`]*)')
+
+def elide(line):
+    """A `...` outside strings and comments stands for code left out: alone on
+    its line or as `{ ... }` it is no statement, anywhere else an expression."""
+    out, code, quote, k = [], '', None, 0
+    def flush(code):
+        if re.fullmatch(r'\s*\.\.\.\s*;?\s*', code):
+            return re.sub(r'\.\.\.\s*;?', '', code)
+        code = re.sub(r'\{\s*\.\.\.\s*;?\s*\}', '{ }', code)
+        return re.sub(r'(?<!\.)\.\.\.(?!\.)', '$zzDocsElided', code)
+    while k < len(line):
+        c = line[k]
+        if quote:
+            out.append(c)
+            if c == '\\' and quote == '"' and k + 1 < len(line):
+                out.append(line[k + 1])
+                k += 1
+            elif c == quote:
+                quote = None
+        elif c in '"\'':
+            out.append(flush(code) + c)
+            code, quote = '', c
+        elif c == '#':
+            out.append(flush(code) + line[k:])
+            return ''.join(out)
+        else:
+            code += c
+        k += 1
+    return ''.join(out) + flush(code)
+
+blocks, skipped = [], 0
+for d in docs:
+    lines = open(d, encoding='utf-8').read().split('\n')
+    i = 0
+    while i < len(lines):
+        m = FENCE.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        indent, fence, lang = len(m.group(1)), m.group(2), m.group(3)
+        close = re.compile(r'^\s*' + re.escape(fence[0]) + '{' + str(len(fence)) + r',}\s*$')
+        end = i + 1
+        while end < len(lines) and not close.match(lines[end]):
+            end += 1
+        if lang == 'jennifer':
+            if end == len(lines):
+                note(f"{d}:{i + 1}", "the ```jennifer block is never closed")
+            elif i > 0 and lines[i - 1].strip() == '<!-- no-check -->':
+                skipped += 1
+            else:
+                body = [l[indent:] if l[:indent].strip() == '' else l.lstrip()
+                        for l in lines[i + 1:end]]
+                # `include` splices a file in before parsing; the fragment's
+                # file is not there to splice, so its line is left blank
+                body = ['' if re.fullmatch(r'\s*include\s+"[^"]*"\s*;\s*', l)
+                        else elide(l) for l in body]
+                blocks.append((d, i + 1, body))
+        i = end + 1
+
+if blocks:
+    work = tempfile.mkdtemp(prefix='.docblocks-', dir='.')
+    try:
+        files = []
+        for n, (_, _, body) in enumerate(blocks):
+            path = os.path.join(os.path.basename(work), f'b{n}.j')
+            with open(path, 'w', encoding='utf-8') as out:
+                out.write(SENTINEL + '\n' + '\n'.join(body) + '\n')
+            files.append(path)
+        try:
+            run = subprocess.run(shlex.split(os.environ['JENNIFER']) +
+                                 ['lint', '--format=json'] + files,
+                                 capture_output=True, text=True)
+        except OSError as e:
+            print(f"cannot run {os.environ['JENNIFER']} to parse the code blocks: {e}",
+                  file=sys.stderr)
+            sys.exit(2)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    try:
+        found = json.loads(run.stdout)
+    except ValueError:
+        found = None
+    if run.returncode not in (0, 1) or not isinstance(found, list):
+        sys.stderr.write(run.stdout + run.stderr)
+        print(f"jennifer lint could not check the code blocks (exit {run.returncode})",
+              file=sys.stderr)
+        sys.exit(2)
+    first = {}
+    for diag in found:
+        name = os.path.basename(diag.get('file', ''))
+        if re.fullmatch(r'b\d+\.j', name) and diag.get('id', '').startswith('L00'):
+            first.setdefault(int(name[1:-2]), diag)
+    for n, (d, fence_line, _) in enumerate(blocks):
+        diag = first.get(n)
+        if diag is None:
+            # the sentinel always fails scope analysis; silence means this
+            # interpreter no longer works the way the check relies on
+            print(f"{d}:{fence_line}: jennifer lint reported nothing for this block, "
+                  f"so the check cannot tell whether it parses", file=sys.stderr)
+            sys.exit(2)
+        if diag['line'] == 1:
+            continue                       # it reached the sentinel: it parsed
+        msg = re.sub(r'\S*?b(\d+)\.j:(\d+):\d+',
+                     lambda m: f"{blocks[int(m.group(1))][0]}:"
+                               f"{blocks[int(m.group(1))][1] + int(m.group(2)) - 1}",
+                     diag['message'])
+        note(f"{d}:{fence_line}", f"{msg} (line {fence_line + diag['line'] - 1})")
+
 if problems:
     print("", file=sys.stderr)
     for p in problems:
@@ -409,11 +543,13 @@ print(f"docs name {len(funcs)} functions, {len(structs)} structs, "
       f"{len(enums)} enums and {len(consts)} constants, all matching the code")
 if backlog:
     print(f"  except {len(backlog)} carried in {TODO} - shrink that file")
+print(f"all {len(blocks)} ```jennifer block(s) in the docs parse" +
+      (f", {skipped} more marked <!-- no-check -->" if skipped else ""))
 PYSTATIC
 
 [[ "$mode" == check ]] || exit 0
 
-# --- 7: what Jennifer's docblock parser says --------------------------------
+# --- 8: what Jennifer's docblock parser says --------------------------------
 # The parser that reads docblocks for Jennifer's own tooling, so a docblock
 # it rejects is wrong whatever the checks above think. The driver is written
 # inside the checkout, not /tmp: in CI the interpreter runs in a container
@@ -446,7 +582,7 @@ JDOCBLOCK
     "$JENNIFER" run "$(basename "$work")/check.j" "${documented[@]}"
 fi
 
-# --- 8: the values the guides claim ----------------------------------------
+# --- 9: the values the guides claim ----------------------------------------
 if [[ ! -f tools/doc-claims.j ]]; then
     echo "no tools/doc-claims.j in this deck - skipping the value claims"
     exit 0

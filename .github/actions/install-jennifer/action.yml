@@ -4,9 +4,10 @@
 # Build a Jennifer interpreter from source and put it, plus the bundled system
 # modules, where the runner can find it.
 #
-# Most jobs do not need this: setup-jennifer runs a published image. This is
-# for what no image carries - `jennifer-tiny`, the TinyGo build - and for
-# testing against an interpreter commit that has not been published.
+# Most jobs do not need this: setup-jennifer runs a published image, which
+# carries `jennifer-tiny` (and, from jennifer 0.26 on, `jennifer-tiny-dev`)
+# too. This is for testing against an interpreter commit that has not been
+# published.
 #
 # Built rather than downloaded, deliberately: every published release of the
 # language is marked as a GitHub *prerelease*, so `gh release view` has no

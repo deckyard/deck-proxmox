@@ -13,15 +13,35 @@
 # the checkout and nothing else, so fixtures belong inside the repository and
 # paths handed to a program must be relative.
 #
+# With `tiny: 'true'` it also installs `jennifer-tiny` and, when the image
+# carries it, `jennifer-tiny-dev` (the TinyGo build with the development
+# subcommands, in images built from jennifer 0.26 on), the same way: the
+# tiny job checks a deck's jennifer-tiny claim on the very image the main job
+# runs, with no toolchain to set up.
+#
 # Needs the repository checked out first, since it reads the manifest.
 
 name: Set up Jennifer
 description: Pull the interpreter image for the deck's floor and install a `jennifer` shim
 
+inputs:
+  tiny:
+    description: >
+      Also install `jennifer-tiny` and, when the image has it,
+      `jennifer-tiny-dev` shims. For the job that exercises the constrained
+      binary.
+    required: false
+    default: 'false'
+
 outputs:
   image:
     description: The interpreter image the shim runs.
     value: ${{ steps.resolve.outputs.image }}
+  tiny-dev:
+    description: >
+      'true' when a `jennifer-tiny-dev` shim was installed (`tiny` was set and
+      the image carries the binary).
+    value: ${{ steps.shim.outputs.tiny-dev }}
 
 runs:
   using: composite
@@ -44,16 +64,36 @@ runs:
         docker run --rm "$JENNIFER_IMAGE" version
 
     # --user keeps anything written into the workspace owned by the runner.
+    # One shim per binary, each named after the binary it runs in the image.
     - name: Install a `jennifer` shim that runs the image
+      id: shim
       shell: bash
+      env:
+        TINY: ${{ inputs.tiny }}
       run: |
         set -euo pipefail
         mkdir -p "$HOME/.local/bin"
-        cat > "$HOME/.local/bin/jennifer" <<'SHIM'
+        shim() {
+          cat > "$HOME/.local/bin/$1" <<SHIM
         #!/usr/bin/env bash
-        exec docker run --rm --user "$(id -u):$(id -g)" \
-          --volume "${GITHUB_WORKSPACE}:/work" --workdir /work \
-          --entrypoint jennifer "${JENNIFER_IMAGE}" "$@"
+        exec docker run --rm --user "\$(id -u):\$(id -g)" \\
+          --volume "\${GITHUB_WORKSPACE}:/work" --workdir /work \\
+          --entrypoint $1 "\${JENNIFER_IMAGE}" "\$@"
         SHIM
-        chmod +x "$HOME/.local/bin/jennifer"
+          chmod +x "$HOME/.local/bin/$1"
+        }
+        shim jennifer
+        tiny_dev=false
+        if [[ "$TINY" == true ]]; then
+          shim jennifer-tiny
+          # Images built before jennifer-tiny-dev existed lack it; without the
+          # shim, tools/check-tiny.sh falls back to its runner scripts.
+          if docker run --rm --entrypoint jennifer-tiny-dev "$JENNIFER_IMAGE" version; then
+            shim jennifer-tiny-dev
+            tiny_dev=true
+          else
+            echo "no jennifer-tiny-dev in $JENNIFER_IMAGE"
+          fi
+        fi
+        echo "tiny-dev=${tiny_dev}" >> "$GITHUB_OUTPUT"
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"

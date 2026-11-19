@@ -12,3 +12,4 @@ vendor/
 .jfmt-*.tmp
 # scratch from tools/check-docs.sh
 .docblocks-*/
+.check-tiny-*/

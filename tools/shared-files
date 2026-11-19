@@ -38,6 +38,7 @@ shared   tools/check-coverage.sh
 shared   tools/check-docs.sh
 shared   tools/check-identity.sh
 shared   tools/check-examples-shared.sh
+shared   tools/check-tiny.sh
 shared   tools/vendor-deps.sh
 shared   tools/version.sh
 shared   tools/inject-version.sh

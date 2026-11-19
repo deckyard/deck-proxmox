@@ -94,7 +94,8 @@ jobs:
         run: tools/check-coverage.sh
 
       - name: Check the docs against the code
-        # signatures, types, constants, docblocks, links and the book outline
+        # signatures, types, constants, docblocks, links, the book outline and
+        # the syntax of every ```jennifer block
         run: tools/check-docs.sh
 
       - name: Check no template identity is left
@@ -136,27 +137,22 @@ jobs:
           fetch-depth: 0
 
       # Only decks that list jennifer-tiny in [engines] make the claim, and a
-      # claim is only worth making if it is checked. No tiny container is
-      # published, so this job builds the interpreter - at the ref matching
-      # the deck's floor, the same rule the image choice follows.
+      # claim is only worth making if it is checked. Every interpreter image
+      # carries jennifer-tiny, so this job runs the same image as the one above
+      # (tools/deck-lib.sh's deck_image: the deck's floor picks it, `:dev` for
+      # an unreleased floor) and builds nothing.
       - name: Does this deck claim jennifer-tiny?
         id: claim
         run: |
           set -euo pipefail
           source tools/deck-lib.sh && deck_load
           echo "tiny=$DECK_TINY" >> "$GITHUB_OUTPUT"
-          if [[ "$DECK_TINY" == yes ]]; then
-            ref="$(deck_source_ref)"
-            echo "ref=${ref}" >> "$GITHUB_OUTPUT"
-            echo "floor ${DECK_FLOOR} -> interpreter source ${ref}"
-          fi
 
-      - name: Install Jennifer and jennifer-tiny
+      - name: Set up Jennifer and jennifer-tiny
         if: steps.claim.outputs.tiny == 'yes'
-        uses: ./.github/actions/install-jennifer
+        uses: ./.github/actions/setup-jennifer
         with:
-          ref: ${{ steps.claim.outputs.ref }}
-          tinygo: 'true'
+          tiny: 'true'
 
       - name: Vendor the deck dependencies
         if: steps.claim.outputs.tiny == 'yes'
@@ -167,10 +163,19 @@ jobs:
         run: tools/inject-version.sh
 
       - name: Exercise the deck on the constrained build
-        # `jennifer test` is a development feature the constrained build does
-        # not carry, so the check is that the deck loads and its examples
-        # produce output there.
+        # The deck loads and its examples produce output on jennifer-tiny.
         if: steps.claim.outputs.tiny == 'yes'
         env:
           JENNIFER: jennifer-tiny
         run: tools/check-examples.sh
+
+      - name: Run the test overlays on the constrained build
+        # jennifer-tiny-dev is jennifer-tiny plus the development subcommands
+        # (same runtime, stack and caps), so `jennifer-tiny-dev test` runs each
+        # suite as the main job's `jennifer test` does. An image without it
+        # (a release before jennifer 0.26) gets tools/check-tiny.sh's runner
+        # scripts on jennifer-tiny instead.
+        if: steps.claim.outputs.tiny == 'yes'
+        env:
+          JENNIFER: jennifer-tiny
+        run: tools/check-tiny.sh

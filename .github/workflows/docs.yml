@@ -44,6 +44,6 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    uses: jennifer-language/grimoire/.github/workflows/docs-pages.yml@0.4.0
+    uses: jennifer-language/grimoire/.github/workflows/docs-pages.yml@0.5.0
     with:
-      image: ghcr.io/jennifer-language/grimoire:0.4.0
+      image: ghcr.io/jennifer-language/grimoire:0.5.0
