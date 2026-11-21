@@ -5,10 +5,9 @@
 # Run the whole gate locally, in the order .github/workflows/test.yml runs it.
 #
 # Every check runs even after one fails, so a single pass reports everything;
-# the exit status is 1 if any did. Two CI steps are left out because they
-# change the working tree: tools/vendor-deps.sh (run it once, and again when
-# the dependencies change) and tools/inject-version.sh (it would stamp a dev
-# version into a tracked file).
+# the exit status is 1 if any did. One CI step is left out because it changes
+# the working tree: tools/vendor-deps.sh (run it once, and again when the
+# dependencies change).
 #
 # Usage: tools/check-all.sh
 set -uo pipefail

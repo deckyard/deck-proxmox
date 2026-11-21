@@ -1,25 +1,23 @@
 # tools/shared.lock - written by the template's tools/sync-deck.sh. Do not
 # edit: tools/check-shared.sh fails CI when a file below differs from it.
-# source: template c81632c-dirty, synced 2026-11-17
-64d49fb2087dc76fadc8b4282dc45d55354a84a57914725c258a036ccf66f607  .github/workflows/test.yml
-0c9c1a9fea4b6cb46c4373ddebd857df1528189b0e09324c7309bf2164324097  .github/workflows/release.yml
+# source: template f046620-dirty, synced 2026-11-19
+5af0423a76302339ba06172dd25742e1538b1f6abc77a0a692bc7ceaefeafc1d  .github/workflows/test.yml
+66633ff43b9729cf48013c484b63dae407c299946e6ce8d1fe046d126dfd1463  .github/workflows/release.yml
 11d9adf335e2cb9ce3883bc360ffe54a7369be857dfa09e49d6689e6a410ada4  .github/workflows/docs.yml
 16e13efa3be95e32734895b93d9d390d3237cf52e5f63ced7e4ecc3ef285da7b  .github/actions/setup-jennifer/action.yml
 d749f6dcd08caa5f5e6fe1b5f168564f8b06e031b9c80d86e31fba23dc2a733e  .github/actions/install-jennifer/action.yml
 27d92169b602e080a9c3ca6b1268d3baff49eeb93f0e40037a34824a8f8112d3  tools/deck-lib.sh
-e387bd280c2195a382778ae468d24f17211881b67862eac33e6ac76a5b502cfb  tools/shared-files
+9248104074b32e823d38c5dd2223cea4932d311e4fbb93152ce79e23a16a6ecd  tools/shared-files
 22537456f874d287fa7bb212a8fb8fd782c1e27a7e3c3a99853054cc6d9f34be  tools/check-shared.sh
-c78bbab732a504f05f195e36deea4f8db05113f8ae1b0b4b717d184e02896f65  tools/check-all.sh
+0f2c1c23333ecd8a705d31b45be46dba588b78961026b179851f9bf851d474a6  tools/check-all.sh
 655d2ff1ad7d794b41c3ad6a5990d382bf48e4a1fd41169723696ff75461dc22  tools/check-headers.sh
 24d1ffafede332210718d6f6fe5870539c28163f95a37296b365adf741a290cf  tools/check-overlays.sh
 683de1c4898ba26287c9085bf21c256bdb2acdf0e5508032231f5d0e3ece257d  tools/check-src.sh
 356221c388f2125ef68b84a8d453988049cdf186d8d6836683a181cad432cbb7  tools/check-coverage.sh
-c9bb0529741f63ba6b4b26445dd79453bd53816ca4b3d24e1fe89724716cced9  tools/check-docs.sh
+1f915e82aa1326df0f1b482369d3f60a74ae375e7d079fedaa64fb5d1d5718e3  tools/check-docs.sh
 090ff0fb9b2f43889ba211f29b0df0fa29bce3f76342707020c630529434bc75  tools/check-identity.sh
 9a62551b9c8b76af66de93bcc004f977f19b49d87fce2b5ee1b0d06ef70f9d27  tools/check-examples-shared.sh
 509d9a184c341d4abf9e4bf0a97d1223199f75174e8c3ae9585ab6564810c70c  tools/check-tiny.sh
 84aa3a2f94090761ce94080b99a396d7fb24c76f3faceba2bac77ffb1662d9fe  tools/vendor-deps.sh
-0eda843a636a7c3b7c9d14a8bd969950bde8f6133975ffa3ce762d62b1d334e7  tools/version.sh
-5ca4b2343c4d4d97b12bc64be88c4afce247bc444f9168409552066f91bf900c  tools/inject-version.sh
 5c236a3181973514d90488642fbd8c337df30a0d65008d11119769d5119381bf  tools/pack.sh
 38d3cf918acc499188ace07183077c944b8407fceef6220c803f525d15b535da  AGENTS.md

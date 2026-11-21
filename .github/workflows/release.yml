@@ -78,15 +78,13 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
         with:
-          # Tags for the version, and history for the notes.
+          # Tags and history for the release notes.
           fetch-depth: 0
 
-      # A deck with a generated version file ships it stamped with the tag.
       - name: Build the release archive
         id: pack
         run: |
           set -euo pipefail
-          tools/inject-version.sh
           source tools/deck-lib.sh && deck_load
           tools/pack.sh dist
           {

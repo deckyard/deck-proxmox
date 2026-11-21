@@ -10,9 +10,8 @@
 # - manifest format, one module or a module plus included topics, whether it
 # claims jennifer-tiny, which interpreter its floor implies - is discovered by
 # tools/deck-lib.sh at run time. Steps a deck may not need are no-ops there:
-# vendor-deps.sh without dependencies, inject-version.sh without a generated
-# version file, check-extra.sh when it does not exist. tools/check-all.sh runs
-# the same gate locally.
+# vendor-deps.sh without dependencies, check-extra.sh when it does not exist.
+# tools/check-all.sh runs the same gate locally.
 
 name: test
 
@@ -37,9 +36,6 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v7
-        with:
-          # tools/version.sh derives a dev version from the tag history.
-          fetch-depth: 0
 
       # First, because every later step trusts the shared files: a deck that
       # edited one is running a gate nobody else runs.
@@ -52,10 +48,6 @@ jobs:
       # Before anything loads the deck: lint and the suites resolve imports.
       - name: Vendor the deck dependencies
         run: tools/vendor-deps.sh
-
-      # Before fmt and the header guard, which both check the generated file.
-      - name: Inject the version from the git tags
-        run: tools/inject-version.sh
 
       - name: Identify the deck
         run: |
@@ -133,8 +125,6 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       # Only decks that list jennifer-tiny in [engines] make the claim, and a
       # claim is only worth making if it is checked. Every interpreter image
@@ -157,10 +147,6 @@ jobs:
       - name: Vendor the deck dependencies
         if: steps.claim.outputs.tiny == 'yes'
         run: tools/vendor-deps.sh
-
-      - name: Inject the version from the git tags
-        if: steps.claim.outputs.tiny == 'yes'
-        run: tools/inject-version.sh
 
       - name: Exercise the deck on the constrained build
         # The deck loads and its examples produce output on jennifer-tiny.
