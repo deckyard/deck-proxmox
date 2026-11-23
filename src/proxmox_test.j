@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <mplx@jennifer-lang.dev>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 
 /**
  * White-box tests for proxmox: jennifer test src/proxmox_test.j
@@ -9,7 +9,9 @@
  * `httpd` server on a loopback port that answers with canned Proxmox replies
  * and hands back what it received.
  */
+use encoding;
 use httpd;
+use io;
 use net;
 use task;
 use testing;
@@ -78,7 +80,7 @@ func serve(srv as httpd.Server, replies as list of Reply) {
             cookie: httpd.header($req, "Cookie"),
             csrf: httpd.header($req, "CSRFPreventionToken"),
             contentType: httpd.header($req, "Content-Type"),
-            body: convert.stringFromBytes("utf-8", httpd.body($req))
+            body: encoding.decode("utf-8", httpd.body($req))
         };
         httpd.respond($req, $r.status, $r.body);
     }
@@ -212,7 +214,7 @@ func testBuilders() {
     testing.assertEqual($c.pollMs, 1000);
     testing.assertEqual($c.tls.skipVerify, false);
     testing.assertEqual(withInsecure($c).tls.skipVerify, true);
-    def pem as bytes init convert.bytesFromString("utf-8", "-----BEGIN CERTIFICATE-----");
+    def pem as bytes init encoding.encode("utf-8", "-----BEGIN CERTIFICATE-----");
     def trusted as Client init withCaCert(withInsecure($c), $pem);
     testing.assertEqual($trusted.tls.skipVerify, false);
     testing.assertEqual($trusted.tls.caCert, $pem);
@@ -498,7 +500,7 @@ func testStatusPrefersTheQmpStatus() {
 
 func testPowerActionsReturnTheUpid() {
     def replies as list of Reply init [];
-    for (def i in lists.range(0, 7)) {
+    for (def i in 0..7) {
         $replies[] = ok('"' + UPID + '"');
     }
     def f as Fake init fake($replies);
@@ -1110,7 +1112,7 @@ func ticketWithNewline() {
  * @return {string} the ticket
  */
 func ticketAged(age as int) {
-    return "PVE:root@pam:" + strings.upper(convert.toString(time.unix(time.now()) - $age, 16)) +
+    return "PVE:root@pam:" + strings.upper(io.sprintf("%d|base=16", time.unix(time.now()) - $age)) +
         "::sig";
 }
 
@@ -1164,7 +1166,7 @@ func testWaitTaskRetriesOutagesButNotRefusals() {
 
 func testWaitTaskGivesUpAfterTooManyFailures() {
     def replies as list of Reply init [];
-    for (def i in lists.range(0, MAX_POLL_FAILURES)) {
+    for (def i in 0..MAX_POLL_FAILURES) {
         $replies[] = Reply{status: 500, body: '{"data":null,"message":"no such task"}'};
     }
     def f as Fake init fake($replies);
@@ -1347,7 +1349,7 @@ func serveCanned(l as net.Listener, answer as string) {
             if ($answer == "") {
                 $open[] = $conn;
             } else {
-                net.writeBytes($conn, convert.bytesFromString("utf-8", $answer));
+                net.writeBytes($conn, encoding.encode("utf-8", $answer));
                 net.close($conn);
             }
         }
@@ -1423,7 +1425,7 @@ func testWaitTaskOnTimeoutsAndCutReplies() {
 # A JSON reply past the decoder's nesting cap is a reached cap.
 func testDeepReplyIsALimit() {
     try {
-        dataOf(strings.repeat("[", 1001) + strings.repeat("]", 1001), "GET /version");
+        dataOf(strings.replicate("[", 1001) + strings.replicate("]", 1001), "GET /version");
         missed("a deep reply passed");
     } catch (e) {
         testing.assertEqual($e.kind, "limit");

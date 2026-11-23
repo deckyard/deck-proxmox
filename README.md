@@ -55,7 +55,7 @@ io.printf("start: %s\n", $t.exitStatus);
 
 ## Requirements
 
-Jennifer 0.26.0 or newer and the default `jennifer` binary: the deck needs
+Jennifer 0.27.0 or newer and the default `jennifer` binary: the deck needs
 the `net` capability, which `jennifer-tiny` lacks.
 
 ## Development

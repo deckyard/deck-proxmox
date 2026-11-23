@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <mplx@jennifer-lang.dev>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 # pragma-jennifer-capability: net
 
 /**
@@ -437,10 +437,10 @@ func baseUrl(address as string) {
         fail("the host is empty");
     }
     while (strings.endsWith($url, "/")) {
-        $url = strings.substring($url, 0, len($url) - 1);
+        $url = $url[..len($url) - 1];
     }
     if (strings.endsWith($url, "/api2/json")) {
-        $url = strings.substring($url, 0, len($url) - len("/api2/json"));
+        $url = $url[..len($url) - len("/api2/json")];
     }
     if (strings.contains($url, "://")) {
         return $url;
@@ -2033,7 +2033,7 @@ export func restore(c as Client, node as string, vmid as int, volid as string, s
     def path as string init $volid;
     def colon as int init strings.indexOf($volid, ":");
     if ($colon >= 0) {
-        $path = strings.substring($volid, $colon + 1);
+        $path = $volid[$colon + 1..];
     }
     if (strings.contains($path, "vzdump-qemu-") or strings.startsWith($path, "backup/vm/")) {
         $kind = "qemu";
@@ -2065,7 +2065,7 @@ export func deleteVolume(c as Client, node as string, volid as string) {
     if ($colon <= 0) {
         fail("a volume id is <storage>:<path>, got \"" + $volid + "\"");
     }
-    def storage as string init strings.substring($volid, 0, $colon);
+    def storage as string init $volid[..$colon];
     def path as string init "/nodes/" + uri.encode($node) + "/storage/" + uri.encode($storage) +
         "/content/" + uri.encode($volid);
     return field(delete($c, $path, {}), "");
