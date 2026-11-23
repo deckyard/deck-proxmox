@@ -19,10 +19,16 @@
 # tiny job checks a deck's jennifer-tiny claim on the very image the main job
 # runs, with no toolchain to set up.
 #
+# A runner without Docker (Forgejo's runner puts each job in a container with
+# no Docker socket) gets the same interpreter natively instead: a released
+# series from its release archive (jennifer and jennifer-tiny, no
+# jennifer-tiny-dev, so tools/check-tiny.sh uses its runner scripts), an
+# unreleased floor built from `main` by install-jennifer.
+#
 # Needs the repository checked out first, since it reads the manifest.
 
 name: Set up Jennifer
-description: Pull the interpreter image for the deck's floor and install a `jennifer` shim
+description: Pull the interpreter image for the deck's floor and install a `jennifer` shim, or install that interpreter natively where there is no Docker
 
 inputs:
   tiny:
@@ -41,7 +47,7 @@ outputs:
     description: >
       'true' when a `jennifer-tiny-dev` shim was installed (`tiny` was set and
       the image carries the binary).
-    value: ${{ steps.shim.outputs.tiny-dev }}
+    value: ${{ steps.shim.outputs.tiny-dev || 'false' }}
 
 runs:
   using: composite
@@ -56,8 +62,17 @@ runs:
         echo "JENNIFER_IMAGE=${image}" >> "$GITHUB_ENV"
         echo "image=${image}" >> "$GITHUB_OUTPUT"
         echo "floor ${DECK_FLOOR} -> ${image}"
+        if docker info >/dev/null 2>&1; then
+          echo "mode=docker" >> "$GITHUB_OUTPUT"
+        else
+          ref="$(deck_source_ref)"
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          echo "mode=native" >> "$GITHUB_OUTPUT"
+          echo "no Docker on this runner: installing ${ref} natively"
+        fi
 
     - name: Pull the interpreter image
+      if: steps.resolve.outputs.mode == 'docker'
       shell: bash
       run: |
         docker pull "$JENNIFER_IMAGE"
@@ -67,6 +82,7 @@ runs:
     # One shim per binary, each named after the binary it runs in the image.
     - name: Install a `jennifer` shim that runs the image
       id: shim
+      if: steps.resolve.outputs.mode == 'docker'
       shell: bash
       env:
         TINY: ${{ inputs.tiny }}
@@ -97,3 +113,46 @@ runs:
         fi
         echo "tiny-dev=${tiny_dev}" >> "$GITHUB_OUTPUT"
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    # The archive the release workflow publishes for the tag the image is
+    # built from, checked against its .sha256.
+    - name: Install the release natively
+      if: steps.resolve.outputs.mode == 'native' && steps.resolve.outputs.ref != 'main'
+      shell: bash
+      env:
+        REF: ${{ steps.resolve.outputs.ref }}
+        TINY: ${{ inputs.tiny }}
+      run: |
+        set -euo pipefail
+        case "$(uname -m)" in
+          x86_64) arch=amd64 ;;
+          aarch64|arm64) arch=arm64 ;;
+          *) echo "::error::no Jennifer release archive for $(uname -m)"; exit 1 ;;
+        esac
+        stage="jennifer-${REF}-linux-${arch}"
+        base="https://github.com/jennifer-language/jennifer/releases/download/${REF}"
+        tmp="$(mktemp -d)"
+        curl -fsSL -o "$tmp/${stage}.tar.gz" "$base/${stage}.tar.gz"
+        curl -fsSL -o "$tmp/${stage}.tar.gz.sha256" "$base/${stage}.tar.gz.sha256"
+        (cd "$tmp" && sha256sum -c "${stage}.tar.gz.sha256")
+        tar -xzf "$tmp/${stage}.tar.gz" -C "$tmp"
+        install -Dm755 "$tmp/$stage/jennifer" "$HOME/.local/bin/jennifer"
+        if [[ "$TINY" == true ]]; then
+          install -Dm755 "$tmp/$stage/jennifer-tiny" "$HOME/.local/bin/jennifer-tiny"
+        fi
+        mkdir -p "$HOME/.local/share/jennifer"
+        rm -rf "$HOME/.local/share/jennifer/modules"
+        cp -r "$tmp/$stage/share/jennifer/modules" "$HOME/.local/share/jennifer/modules"
+        rm -rf "$tmp"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        # The compiled-in module directory is a system path the archive was
+        # not installed to.
+        echo "JENNIFER_SYSMODDIR=$HOME/.local/share/jennifer/modules" >> "$GITHUB_ENV"
+        "$HOME/.local/bin/jennifer" version
+
+    - name: Build the unreleased interpreter
+      if: steps.resolve.outputs.mode == 'native' && steps.resolve.outputs.ref == 'main'
+      uses: ./.github/actions/install-jennifer
+      with:
+        ref: main
+        tinygo: ${{ inputs.tiny }}

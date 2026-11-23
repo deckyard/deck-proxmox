@@ -7,7 +7,8 @@
 # Most jobs do not need this: setup-jennifer runs a published image, which
 # carries `jennifer-tiny` (and, from jennifer 0.26 on, `jennifer-tiny-dev`)
 # too. This is for testing against an interpreter commit that has not been
-# published.
+# published, and setup-jennifer's way to an unreleased floor on a runner
+# without Docker.
 #
 # Built rather than downloaded, deliberately: every published release of the
 # language is marked as a GitHub *prerelease*, so `gh release view` has no
@@ -40,7 +41,7 @@ inputs:
   tinygo-version:
     description: TinyGo release to build the constrained binary with.
     required: false
-    default: '0.41.1'
+    default: '0.44.0'
 
 runs:
   using: composite
@@ -75,7 +76,7 @@ runs:
         set -euo pipefail
         make build-go
         if [ "${{ inputs.tinygo }}" = "true" ]; then
-          make build-tinygo
+          make build-tinygo build-tinygo-dev
         fi
 
     - name: Install
@@ -85,9 +86,11 @@ runs:
         src="$GITHUB_WORKSPACE/.jennifer-src"
 
         install -Dm755 "$src/jennifer" "$HOME/.local/bin/jennifer"
-        if [ -f "$src/jennifer-tiny" ]; then
-          install -Dm755 "$src/jennifer-tiny" "$HOME/.local/bin/jennifer-tiny"
-        fi
+        for bin in jennifer-tiny jennifer-tiny-dev; do
+          if [ -f "$src/$bin" ]; then
+            install -Dm755 "$src/$bin" "$HOME/.local/bin/$bin"
+          fi
+        done
 
         # The Jennifer-coded library modules a bare `import "name.j";` resolves
         # against. They ship as `share/jennifer/modules/` in a release tarball
