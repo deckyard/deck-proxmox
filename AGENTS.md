@@ -45,6 +45,9 @@ floor. Read it first.
    A bug fix starts with a test that fails without the fix.
 4. **Document it.** A new or changed export is updated in `docs/cheatsheet.md`,
    in the docblock, and in any guide or example that shows it.
+   A third-party brand gets ™ after its first prose use in each doc (never in
+   code, URLs or headings), and the `## Trademarks` section of `README.md` and
+   `docs/index.md` names it and its owner.
 5. **Format**: `jennifer fmt -w <files>`.
 6. **Run the gate** (below) and fix what it reports. Do not stop at "the tests
    pass": CI also fails on formatting, lint warnings, headers, overlays and

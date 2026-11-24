@@ -1,6 +1,6 @@
 # tools/shared.lock - written by the template's tools/sync-deck.sh. Do not
 # edit: tools/check-shared.sh fails CI when a file below differs from it.
-# source: template 34187b5-dirty, synced 2026-11-21
+# source: template 6c495b1-dirty, synced 2026-11-24
 5af0423a76302339ba06172dd25742e1538b1f6abc77a0a692bc7ceaefeafc1d  .github/workflows/test.yml
 66633ff43b9729cf48013c484b63dae407c299946e6ce8d1fe046d126dfd1463  .github/workflows/release.yml
 11d9adf335e2cb9ce3883bc360ffe54a7369be857dfa09e49d6689e6a410ada4  .github/workflows/docs.yml
@@ -20,4 +20,4 @@ fa9f7e53dd106a0334480d151c1e19025b030df5447b289d26b9aa3e725f5868  tools/deck-lib
 509d9a184c341d4abf9e4bf0a97d1223199f75174e8c3ae9585ab6564810c70c  tools/check-tiny.sh
 84aa3a2f94090761ce94080b99a396d7fb24c76f3faceba2bac77ffb1662d9fe  tools/vendor-deps.sh
 5c236a3181973514d90488642fbd8c337df30a0d65008d11119769d5119381bf  tools/pack.sh
-38d3cf918acc499188ace07183077c944b8407fceef6220c803f525d15b535da  AGENTS.md
+21b2a4e3c78719a826b158ffdfaec758c639d76ce4e89f06b40b9cf813f424ee  AGENTS.md
