@@ -299,7 +299,7 @@ Every error of kind `"proxmox"`.
 | `proxmox.setConfig(c, g, params)` | `null` | change keys; `{"delete": "a,b"}` removes them |
 | `proxmox.clone(c, g, newid, name)` | `string` | full clone |
 | `proxmox.linkedClone(c, g, newid, name)` | `string` | linked clone of a template |
-| `proxmox.createVm(c, node, vmid, params)` | `string` | create a VM from Proxmox's configuration keys |
+| `proxmox.createVm(c, node, vmid, params)` | `string` | create a VM from Proxmox™'s configuration keys |
 | `proxmox.createContainer(c, node, vmid, params)` | `string` | create a container; `params` needs `ostemplate` |
 | `proxmox.destroy(c, g, purge)` | `string` | delete a stopped guest and its disks |
 | `proxmox.toTemplate(c, g)` | `string` | turn a stopped guest into a template; `""` for a container |

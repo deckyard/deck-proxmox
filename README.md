@@ -5,9 +5,9 @@
 [![release](https://img.shields.io/github/v/release/deckyard/deck-proxmox)](https://github.com/deckyard/deck-proxmox/releases/latest)
 
 A [Jennifer](https://jennifer-lang.dev/) client for the
-[Proxmox VE](https://www.proxmox.com/en/proxmox-virtual-environment) API.
+[Proxmox™ VE](https://www.proxmox.com/en/proxmox-virtual-environment) API.
 `get`, `post`, `put` and `delete` reach every endpoint; typed verbs cover
-nodes, guests (QEMU VMs and LXC containers), creating and deleting them,
+nodes, guests (QEMU™ VMs and LXC containers), creating and deleting them,
 power actions, cloning, templates, snapshots, IP addresses, migration,
 disk resizing, cloud-init, backups and restores, ISOs and container
 templates, metrics, pools, HA, firewall rules, permissions and background
@@ -74,5 +74,10 @@ real host; see their headers.
 
 LGPL-3.0-only, see [LICENSE](LICENSE). Copyright (C) 2026 mplx &lt;mplx@jennifer-lang.dev&gt;.
 
-Proxmox is a registered trademark of Proxmox Server Solutions GmbH. This deck
-is not affiliated with or endorsed by it.
+## Trademarks
+
+Proxmox™ is a registered trademark of Proxmox Server Solutions GmbH. Other
+product and company names may be trademarks of their respective owners. They
+are used only to identify the products this deck works with. This deck is an
+independent project, not affiliated with, sponsored or endorsed by Proxmox
+Server Solutions GmbH.

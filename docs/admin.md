@@ -6,7 +6,7 @@
 ## Monitoring
 
 `proxmox.nodeStatus` returns a node's CPU model and load, memory, swap, root
-disk, kernel and Proxmox version as a `json.Value`. `proxmox.nodeMetrics`
+disk, kernel and Proxmox™ version as a `json.Value`. `proxmox.nodeMetrics`
 and `proxmox.guestMetrics` return load over time, one averaged sample per
 step, for `hour`, `day`, `week`, `month` or `year`.
 

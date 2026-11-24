@@ -3,10 +3,10 @@
 
 # @deckyard/proxmox
 
-A client for the [Proxmox VE](https://www.proxmox.com/en/proxmox-virtual-environment)
+A client for the [Proxmox™ VE](https://www.proxmox.com/en/proxmox-virtual-environment)
 API. `get`, `post`, `put` and `delete` reach every endpoint of `/api2/json`
 and return the reply's `data` as a `json.Value`. Typed verbs cover the daily
-work: nodes, guests (QEMU VMs and LXC containers), creating and deleting them,
+work: nodes, guests (QEMU™ VMs and LXC containers), creating and deleting them,
 power actions, cloning, templates, snapshots, IP addresses, migration,
 disk resizing, cloud-init, backups and restores, ISOs and container
 templates, metrics, pools, HA, firewall rules, permissions and background
@@ -92,3 +92,11 @@ Writes are never retried. `withRetries` retries only GETs answered 429 or 5xx.
 Jennifer 0.27.0 or newer, default `jennifer` binary: the deck needs the `net`
 capability, which `jennifer-tiny` lacks. Tested against the API of Proxmox VE
 7 and 8.
+
+## Trademarks
+
+Proxmox™ is a registered trademark of Proxmox Server Solutions GmbH. Other
+product and company names may be trademarks of their respective owners. They
+are used only to identify the products this deck works with. This deck is an
+independent project, not affiliated with, sponsored or endorsed by Proxmox
+Server Solutions GmbH.

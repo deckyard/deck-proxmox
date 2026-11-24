@@ -5,8 +5,8 @@
 
 ## Scope
 
-The deck is a client for the Proxmox VE HTTP API (`/api2/json`, port 8006):
-nodes, guests (QEMU VMs and LXC containers), power actions, snapshots,
+The deck is a client for the Proxmox™ VE HTTP API (`/api2/json`, port 8006):
+nodes, guests (QEMU™ VMs and LXC containers), power actions, snapshots,
 clones, backups and restores, storage contents, tasks, cloud-init, pools,
 HA, the firewall, users and ACLs. `get`, `post`, `put` and `delete` (over
 `call`) reach any other endpoint. It needs the `net` capability and runs on

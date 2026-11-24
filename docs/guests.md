@@ -32,8 +32,8 @@ state.
 at once.
 
 `stop` cuts the power. `shutdown` asks the guest's operating system (ACPI
-for a VM, which needs the guest to listen; the QEMU guest agent helps) and
-takes a timeout in seconds, 0 for Proxmox's default.
+for a VM, which needs the guest to listen; the QEMU™ guest agent helps) and
+takes a timeout in seconds, 0 for Proxmox™'s default.
 
 ## Tasks
 
@@ -138,7 +138,7 @@ proxmox.waitTask($c, proxmox.deleteSnapshot($c, $web, "preupgrade"), 0);
 
 `clone` makes a full copy. `linkedClone` makes a linked one, which shares the
 template's disks and stores only its changes; it needs a template on storage
-with snapshots (LVM-thin, ZFS, Ceph, qcow2 on a directory).
+with snapshots (LVM-thin, ZFS, Ceph™, qcow2 on a directory).
 `snapshots` lists the oldest first and ends with `current`, the running
 state, whose `parent` is the snapshot it runs on.
 

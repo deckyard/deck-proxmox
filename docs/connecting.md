@@ -15,7 +15,7 @@ $c = proxmox.withTimeout($c, 30000);
 
 ## Certificates
 
-A fresh Proxmox host serves a certificate signed by the cluster's own CA. Trust
+A fresh Proxmox™ host serves a certificate signed by the cluster's own CA. Trust
 that CA: copy `/etc/pve/pve-root-ca.pem` from a node and pass it in.
 
 ```jennifer
@@ -68,7 +68,7 @@ $c = proxmox.loginTotp($c, "ada@pve", $password, "123456");
 ```
 
 `proxmox.login` on such an account throws and says to use `loginTotp`.
-WebAuthn, recovery keys and Yubico OTP are not supported; use a token.
+WebAuthn, recovery keys and Yubico™ OTP are not supported; use a token.
 
 ## Logging a client
 

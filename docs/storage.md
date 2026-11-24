@@ -19,7 +19,7 @@ io.printf("backup: %s\n", $t.exitStatus);
 
 `proxmox.backups` lists the backups on a storage, oldest first, with the
 guest id, size, time and notes. `proxmox.restore` brings one back as a guest:
-a `vzdump-qemu-...` archive, or a Proxmox Backup Server snapshot under
+a `vzdump-qemu-...` archive, or a Proxmox™ Backup Server snapshot under
 `backup/vm/`, becomes a VM; `vzdump-lxc-...` or `backup/ct/` a container. Give it a free id for a copy, or the original id of a stopped
 guest to overwrite it.
 
