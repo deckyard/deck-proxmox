@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <mplx@jennifer-lang.dev>
-# pragma-jennifer-version: >=0.27.0
+# pragma-jennifer-version: >=0.28.0
 # pragma-jennifer-capability: net
 
 /**
@@ -34,6 +34,7 @@ use convert;
 use json;
 use lists;
 use maps;
+use math;
 use net;
 use regex;
 use strings;
@@ -957,7 +958,7 @@ func number(v as json.Value, ptr as string) {
     if ($kind == "int") {
         return json.asInt($v, $ptr);
     } elseif ($kind == "float") {
-        return convert.toInt(json.asFloat($v, $ptr));
+        return math.trunc(json.asFloat($v, $ptr));
     } elseif ($kind == "bool") {
         if (json.asBool($v, $ptr)) {
             return 1;

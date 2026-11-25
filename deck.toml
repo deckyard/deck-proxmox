@@ -1,6 +1,6 @@
 [package]
 name = "@deckyard/proxmox"
-version = "0.2.0"
+version = "0.3.0"
 description = "A client for the Proxmox VE API: guests, nodes, storage and tasks"
 license = "LGPL-3.0-only"
 authors = ["mplx <mplx@jennifer-lang.dev>"]
@@ -16,4 +16,4 @@ manual = "https://deckyard.github.io/deck-proxmox/"
 
 # Only the default binary: `jennifer-tiny` has no `net` capability.
 [engines]
-jennifer = ">=0.27.0"
+jennifer = ">=0.28.0"

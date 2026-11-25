@@ -89,7 +89,7 @@ Writes are never retried. `withRetries` retries only GETs answered 429 or 5xx.
 
 ## Requirements
 
-Jennifer 0.27.0 or newer, default `jennifer` binary: the deck needs the `net`
+Jennifer 0.28.0 or newer, default `jennifer` binary: the deck needs the `net`
 capability, which `jennifer-tiny` lacks. Tested against the API of Proxmox VE
 7 and 8.
 
